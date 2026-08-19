@@ -1,0 +1,11 @@
+# Ignorar variáveis de ambiente (Senhas e e-mails)
+.env
+
+# Ignorar o banco de dados local temporariamente
+*.db
+
+# Ignorar pastas do sistema e do Python
+venv/
+env/
+__pycache__/
+.streamlit/
