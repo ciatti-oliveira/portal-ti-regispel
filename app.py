@@ -2666,8 +2666,12 @@ def show_emprestimos():
                 else:
                     st.info("Banco de dados vazio.")
 
-def main():
+@st.cache_resource
+def inicializar_banco():
     db.init_db()
+
+def main():
+    inicializar_banco()
     
     if 'autenticado' not in st.session_state:
         st.session_state['autenticado'] = False
