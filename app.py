@@ -1051,7 +1051,7 @@ def show_estoque_perifericos():
                     if st.form_submit_button("💾 Registrar Movimentação", use_container_width=True):
                         if mov_item:
                             item_db = db.fetch_data("SELECT qtd_atual FROM estoque_perifericos WHERE item = ?", (mov_item,))
-                            qtd_atual = item_db[0]['qtd_atual'] if item_db else 0
+                            qtd_atual = int(item_db[0]['qtd_atual']) if item_db and item_db[0]['qtd_atual'] else 0
                             
                             nova_qtd = qtd_atual + qtd_mov if "Entrada" in acao else qtd_atual - qtd_mov
                             if nova_qtd < 0: nova_qtd = 0 
