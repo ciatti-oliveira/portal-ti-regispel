@@ -1,0 +1,30 @@
+name: Robô do Relatório Semanal
+
+on:
+  schedule:
+    # 13:00 UTC = 10:00 no horário de Brasília, toda segunda-feira (1)
+    - cron: '0 13 * * 1'
+  workflow_dispatch: # Cria um botão no GitHub para você testar quando quiser
+
+jobs:
+  enviar_relatorio:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v3
+
+      - name: Configurar o Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Instalar bibliotecas
+        run: pip install -r requirements.txt
+
+      - name: Executar o envio de e-mail
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+        run: python robo_email.py
