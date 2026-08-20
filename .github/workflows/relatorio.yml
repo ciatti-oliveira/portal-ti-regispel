@@ -22,9 +22,12 @@ jobs:
       - name: Instalar bibliotecas
         run: pip install -r requirements.txt
 
-      - name: Executar o envio de e-mail
+     - name: Executar o envio de e-mail
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EMAIL_HOST: smtp.gmail.com
+          EMAIL_PORT: 587
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
         run: python robo_email.py
