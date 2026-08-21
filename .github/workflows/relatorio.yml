@@ -27,4 +27,5 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
         run: python robo_email.py

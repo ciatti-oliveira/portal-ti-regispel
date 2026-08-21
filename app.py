@@ -83,7 +83,7 @@ def render_sidebar():
         
     elif modulo == "💻 Controle de Ativos":
         st.sidebar.write("**Módulo de Ativos (PCs)**")
-        menu = ["Dashboard de Ativos", "Inventário de Máquinas", "Notebook Regispel", "Controle de Empréstimos","Estoque de Periféricos", "Fluxo de RH"]
+        menu = ["Dashboard de Ativos", "Inventário de Máquinas", "Notebook Regispel", "Controle de Empréstimos","Estoque de Periféricos", "Fluxo de RH", "Controle de Ativos (DVR)"]
         escolha = st.sidebar.radio("Navegação:", menu, key="menu_ativos")
         return modulo, escolha
 
@@ -2311,7 +2311,36 @@ def show_login():
                 else:
                     st.error("Usuário ou senha incorretos.")
 
-# ==========================================
+
+def show_ativos_dvr():
+    import streamlit as st
+    from streamlit_pdf_viewer import pdf_viewer  # Puxando a ferramenta nova!
+    
+    st.title("📹 Controle de Ativos - DVRs")
+    st.subheader("Manutenção Preventiva CFTV - 2026")
+
+    nome_arquivo_pdf = "dvr_2026.pdf" 
+
+    try:
+        # Aqui acontece a mágica: a biblioteca exibe o PDF nativamente
+        pdf_viewer(nome_arquivo_pdf, width=1400, height=855)
+
+        # E mantemos o botão de download logo abaixo!
+        with open(nome_arquivo_pdf, "rb") as arquivo_pdf:
+            pdf_bytes = arquivo_pdf.read()
+
+        st.write("---")
+        st.download_button(
+            label="📄 Baixar Cópia em PDF",
+            data=pdf_bytes,
+            file_name="Manutencao_CFTV_2026.pdf",
+            mime="application/pdf"
+        )
+        
+    except FileNotFoundError:
+        st.error(f"❌ Arquivo '{nome_arquivo_pdf}' não encontrado na pasta!")
+
+
 # TELA DE CONTROLE DE EMPRÉSTIMOS
 # ==========================================
 def show_emprestimos():
@@ -2702,6 +2731,7 @@ def main():
             elif tela_atual == "Controle de Empréstimos": show_emprestimos()
             elif tela_atual == "Fluxo de RH": show_fluxo_rh()
             elif tela_atual == "Estoque de Periféricos": show_estoque_perifericos()
+            elif tela_atual == "Controle de Ativos (DVR)": show_ativos_dvr()
 
 if __name__ == "__main__":
     main()
