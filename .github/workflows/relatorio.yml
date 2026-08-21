@@ -4,7 +4,7 @@ on:
   schedule:
     # 13:00 UTC = 10:00 no horário de Brasília, toda segunda-feira (1)
     - cron: '0 13 * * 1'
-  workflow_dispatch: # Cria um botão no GitHub para você testar quando quiser
+  workflow_dispatch:
 
 jobs:
   enviar_relatorio:
@@ -25,6 +25,8 @@ jobs:
       - name: Executar o envio de e-mail
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EMAIL_HOST: smtp.gmail.com
+          EMAIL_PORT: 587
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
