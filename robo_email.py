@@ -31,7 +31,7 @@ def rodar_robo():
         SELECT s.categoria, s.cor_tipo, COALESCE(e.quantidade, 0) as qtd, COALESCE(e.obs_solicitacao, '') as obs 
         FROM suprimentos s 
         LEFT JOIN estoque_suprimentos e ON s.id = e.suprimento_id 
-        WHERE qtd <= 2 ORDER BY s.categoria
+        WHERE COALESCE(e.quantidade, 0) <= 2 ORDER BY s.categoria
     """
     itens = db.fetch_data(query)
     
