@@ -479,49 +479,86 @@ def show_estoque_de_suprimentos():
     df_sup['cor_tipo'] = df_sup['cor_tipo'].astype(str).str.strip().str.upper()
 
     if not somente_leitura:
-        with st.expander("🔄 Atualizar Estoque / Registrar Pedido de Compra"):
+        with st.expander("🔄 Movimentação de Estoque (Saída ou Ajuste)"):
+            
+            # 1. Ação escolhida
+            acao = st.radio("O que você deseja registrar?", ["📉 Registrar Saída (Consumo)", "✏️ Ajustar Estoque (Correção/Compra)"], horizontal=True)
+            
             with st.form("form_estoque", clear_on_submit=True):
                 opcoes_itens = {f"{row['categoria']} - {row['cor_tipo']}": row['id'] for _, row in df_sup.iterrows()}
                 
-                col_f1, col_f2, col_f3 = st.columns([2, 1, 1.5])
-                with col_f1:
-                    item_selecionado = st.selectbox("Selecione o Item", list(opcoes_itens.keys()))
-                with col_f2:
-                    nova_qtd = st.number_input("Nova Quantidade", min_value=0, step=1)
-                with col_f3:
-                    obs_pedido = st.text_input("Anotação (Ex: Solicitado 8 unid.)")
-                    limpar_nota = st.checkbox("🧹 Limpar anotação existente")
+                # 2. Se for SAÍDA
+                if acao == "📉 Registrar Saída (Consumo)":
+                    col_f1, col_f2, col_f3 = st.columns([2, 1, 1.5])
+                    with col_f1:
+                        item_selecionado = st.selectbox("Selecione o Item", list(opcoes_itens.keys()))
+                    with col_f2:
+                        qtd_mov = st.number_input("Qtd Retirada", min_value=1, step=1)
+                    with col_f3:
+                        departamento = st.selectbox("Departamento Destino", ["Produção", "RH", "Financeiro", "Administrativo", "Comercial", "Diretoria", "TI", "Outros"])
+                        
+                    obs_pedido = st.text_input("Anotação opcional (Ex: Entregue para o João)")
+                    limpar_nota = False 
+                    
+                # 3. Se for AJUSTE
+                else:
+                    col_f1, col_f2, col_f3 = st.columns([2, 1, 1.5])
+                    with col_f1:
+                        item_selecionado = st.selectbox("Selecione o Item", list(opcoes_itens.keys()))
+                    with col_f2:
+                        qtd_mov = st.number_input("Nova Quantidade Total", min_value=0, step=1)
+                    with col_f3:
+                        obs_pedido = st.text_input("Anotação (Ex: Solicitado 8 unid.)")
+                        limpar_nota = st.checkbox("🧹 Limpar anotação existente")
                 
-                if st.form_submit_button("Salvar Alteração de Estoque"):
+                if st.form_submit_button("Salvar Movimentação"):
+                    item_id = opcoes_itens[item_selecionado]
                     obs_final = obs_pedido.strip()
                     
                     if limpar_nota:
                         obs_final = ""
                     elif not obs_final:
-                        # Se não digitou nota nova, puxa a antiga do banco pra não apagar sem querer
-                        obs_atual_db = db.fetch_data("SELECT obs_solicitacao FROM estoque_suprimentos WHERE suprimento_id = ?", (opcoes_itens[item_selecionado],))
+                        obs_atual_db = db.fetch_data("SELECT obs_solicitacao FROM estoque_suprimentos WHERE suprimento_id = ?", (item_id,))
                         if obs_atual_db and obs_atual_db[0]['obs_solicitacao']:
                             obs_final = obs_atual_db[0]['obs_solicitacao']
-                            
-                    # INTELIGÊNCIA: Limpa automaticamente a anotação se a compra chegou (Estoque > 2)
-                    #if nova_qtd > 2:
-                    #obs_final = ""
+                    
+                    # 4. SALVANDO NO BANCO
+                    if acao == "📉 Registrar Saída (Consumo)":
+                        linha_item = df_sup[df_sup['id'] == item_id]
+                        estoque_atual = int(linha_item['quantidade'].values[0]) if not linha_item.empty else 0
+                        nova_qtd_calculada = estoque_atual - qtd_mov
                         
-                    db.execute_query(
-                        "INSERT INTO estoque_suprimentos (suprimento_id, quantidade, obs_solicitacao) VALUES (?, ?, ?) ON CONFLICT(suprimento_id) DO UPDATE SET quantidade=excluded.quantidade, obs_solicitacao=excluded.obs_solicitacao", 
-                        (opcoes_itens[item_selecionado], nova_qtd, obs_final)
-                    )
-                    st.success("Estoque atualizado!")
+                        if nova_qtd_calculada < 0: 
+                            nova_qtd_calculada = 0
+                            
+                        db.execute_query(
+                            "INSERT INTO estoque_suprimentos (suprimento_id, quantidade, obs_solicitacao) VALUES (?, ?, ?) ON CONFLICT(suprimento_id) DO UPDATE SET quantidade=excluded.quantidade, obs_solicitacao=excluded.obs_solicitacao", 
+                            (item_id, nova_qtd_calculada, obs_final)
+                        )
+                        
+                        db.execute_query(
+                            "INSERT INTO historico_saidas (item, quantidade, departamento) VALUES (?, ?, ?)",
+                            (item_selecionado, qtd_mov, departamento)
+                        )
+                        st.success(f"✅ Saída de {qtd_mov} un. para {departamento} registrada! Estoque atualizado para {nova_qtd_calculada}.")
+                        
+                    else:
+                        db.execute_query(
+                            "INSERT INTO estoque_suprimentos (suprimento_id, quantidade, obs_solicitacao) VALUES (?, ?, ?) ON CONFLICT(suprimento_id) DO UPDATE SET quantidade=excluded.quantidade, obs_solicitacao=excluded.obs_solicitacao", 
+                            (item_id, qtd_mov, obs_final)
+                        )
+                        st.success("✅ Estoque ajustado com sucesso!")
+                        
                     st.rerun()
-        st.markdown("---")
-    
+                    
+    st.markdown("---")
+
     # ==========================================
-    # 🎨 NOVA FUNÇÃO DE CARDS (COM REGRA DE CORES CORRIGIDA)
+    # 🎨 NOVA FUNÇÃO DE CARDS
     # ==========================================
     def gerar_html_card(cat, cor, qtd, obs_solic, basis="calc(50% - 10px)"):
         alerta_extra = ""
         
-        # 1. CORES MAIS FORTES E VIBRANTES
         if obs_solic and obs_solic.strip() != "":
             bg_color = "#99c6fd"
             border_color = "#2f78ee"
@@ -539,9 +576,9 @@ def show_estoque_de_suprimentos():
             text_color = "#c21515" 
             status_txt = "🔴 CRÍTICO"
         elif qtd == 2:
-            bg_color = "#fef08a"  # Fundo amarelo suave
-            border_color = "#eab308" # Borda amarelo/laranja
-            text_color = "#a16207" # Texto laranja escuro/dourado
+            bg_color = "#fef08a"
+            border_color = "#eab308" 
+            text_color = "#a16207" 
             status_txt = "⚠️ ATENÇÃO"
         else:
             bg_color = "#bbf7d0" 
@@ -549,30 +586,20 @@ def show_estoque_de_suprimentos():
             text_color = "#15803d"
             status_txt = "🟢 OK"
             
-        # 2. HTML COM FONTES RECALCULADAS E MAIS COMPACTAS
         card_raw = f"""
         <div style="background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 6px; padding: 12px; flex: 1 1 {basis}; min-width: 130px; box-shadow: 1px 1px 3px rgba(0,0,0,0.05); margin: 5px; box-sizing: border-box; position: relative;">
-            
-            <!-- Status no Canto Direito -->
             <div style="position: absolute; top: 12px; right: 12px; font-size: 10px; font-weight: 800; color: {text_color};">
                 {status_txt}
             </div>
-
-            <!-- Impressora -->
             <div style="font-size: 12px; color: #475569; font-weight: bold; text-transform: uppercase; padding-right: 70px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                 {cat}
             </div>
-            
-            <!-- Cor/Tipo -->
             <div style="font-size: 15px; color: #0f172a; font-weight: 900; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                 {cor}
             </div>
-            
-            <!-- Quantidade -->
             <div style="font-size: 28px; color: {text_color}; font-weight: 900; line-height: 1.1; margin-top: 6px;">
                 {qtd}
             </div>
-            
             {alerta_extra}
         </div>
         """
@@ -607,34 +634,73 @@ def show_estoque_de_suprimentos():
     st.markdown(html_toners.replace("\n", " "), unsafe_allow_html=True)
 
     st.markdown("---") 
+# ==========================================
+    # 📈 MINI DASHBOARD DE CONSUMO
+    # ==========================================
+    st.markdown("#### 📈 Resumo Geral de Saídas")
+    
+    # 1. Busca o histórico de saídas
+    query_hist = "SELECT departamento, item, quantidade FROM historico_saidas"
+    dados_hist = db.fetch_data(query_hist)
+    
+    if dados_hist:
+        df_hist = pd.DataFrame(dados_hist)
+        
+        # 2. Cálculo dos 3 Indicadores Principais
+        total_consumido = df_hist['quantidade'].sum()
+        
+        # Descobre o Item mais pedido
+        df_itens = df_hist.groupby('item')['quantidade'].sum().reset_index().sort_values(by='quantidade', ascending=False)
+        item_campeao = df_itens.iloc[0]['item']
+        qtd_item_campeao = df_itens.iloc[0]['quantidade']
+        
+        # Descobre o Setor que mais pediu
+        df_setores = df_hist.groupby('departamento')['quantidade'].sum().reset_index().sort_values(by='quantidade', ascending=False)
+        setor_campeao = df_setores.iloc[0]['departamento']
+        qtd_setor_campeao = df_setores.iloc[0]['quantidade']
+        
+        # 3. Renderiza os cartões de métrica
+        dash1, dash2, dash3 = st.columns(3)
+        dash1.metric("📦 Total de Insumos Entregues", f"{total_consumido} un.")
+        dash2.metric("🔝 Item Mais Requisitado", f"{item_campeao}", f"{qtd_item_campeao} un.")
+        dash3.metric("🏢 Maior Setor Consumidor", f"{setor_campeao}", f"{qtd_setor_campeao} un.")
+        
+        # 4. Tabela detalhada
+        df_detalhado = df_hist.groupby(['departamento', 'item'])['quantidade'].sum().reset_index()
+        df_detalhado = df_detalhado.sort_values(by=['departamento', 'quantidade'], ascending=[True, False])
+        
+        st.markdown("**📋 Detalhamento por Departamento e Item:**")
+        st.dataframe(
+            df_detalhado.rename(columns={
+                'departamento': 'Departamento', 
+                'item': 'Item / Modelo / Cor', 
+                'quantidade': 'Qtd Consumida'
+            }), 
+            use_container_width=True, 
+            hide_index=True
+        )
+    else:
+        st.info("Nenhuma saída registrada ainda. O dashboard ganhará vida assim que você registrar o primeiro consumo!")
+        
+    st.markdown("---")
 
     st.markdown("#### 📋 Modelos e Departamentos Vinculados")
     df_tabela = df_sup.groupby('categoria')['departamentos'].first().reset_index()
 
-    # 1. Borda da tabela levemente arredondada e sombra suave
     html_tabela = '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">'
-
-    # 2. Cabeçalho: Fundo Azul e Letra Branca (mais viva)
     html_tabela += '<tr style="background-color: #005ea2; color: white;">'
     html_tabela += '<th style="padding: 10px; text-align: left; width: 25%; font-size: 13px;">Modelo do Suprimento</th>'
     html_tabela += '<th style="padding: 10px; text-align: left; width: 75%; font-size: 13px;">Departamentos Atendidos</th>'
     html_tabela += '</tr>'
 
-    # 3. Laço de repetição com efeito Zebrado (fundo alternado) e letras escuras
     for index, row in df_tabela.iterrows():
-        # Alterna entre cinza bem clarinho e branco puro
         cor_fundo = "#f8f9fa" if index % 2 == 0 else "#ffffff"
-        
         html_tabela += f'<tr style="background-color: {cor_fundo}; border-bottom: 1px solid #e2e8f0;">'
-        # Coluna do Modelo: Letra preta e negrito
         html_tabela += f'<td style="padding: 10px; font-weight: 700; color: #000000; font-size: 12px;">{row["categoria"]}</td>'
-        # Coluna dos Departamentos: Letra preta 
         html_tabela += f'<td style="padding: 10px; color: #000000; font-weight: 500; line-height: 1.4;">{row["departamentos"]}</td>'
         html_tabela += '</tr>'
 
     html_tabela += '</table>'
-
-    # 4. Renderiza no Streamlit
     st.markdown(html_tabela, unsafe_allow_html=True)
     def show_importacao():
         st.title("📥 Importação de Dados")
