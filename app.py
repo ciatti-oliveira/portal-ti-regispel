@@ -495,7 +495,7 @@ def show_estoque_de_suprimentos():
                     with col_f2:
                         qtd_mov = st.number_input("Qtd Retirada", min_value=1, step=1)
                     with col_f3:
-                        departamento = st.selectbox("Departamento Destino", ["Produção", "RH", "Financeiro", "Administrativo", "Comercial", "Diretoria", "TI", "Outros"])
+                        departamento = st.selectbox("Departamento Destino", ["Qualidade", "Almoxarifado", "Expedição", "Produção", "RH/DP", "PCP", "Comercial", "Diretoria", "Líderes de Produção", "Compras"])
                         
                     obs_pedido = st.text_input("Anotação opcional (Ex: Entregue para o João)")
                     limpar_nota = False 
