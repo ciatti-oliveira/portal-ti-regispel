@@ -87,135 +87,248 @@ def render_sidebar():
         escolha = st.sidebar.radio("Navegação:", menu, key="menu_ativos")
         return modulo, escolha
 
-
 # ==========================================
 # MÓDULO 1: GESTÃO DE IMPRESSORAS
 # ==========================================
 
-def ping_ip(ip):
-    """Dispara um ping invisível para o IP e retorna True se responder, False se falhar."""
-    if not ip or ip.strip() == "":
-        return False
-    
-    parametro = '-n' if platform.system().lower() == 'windows' else '-c'
-    timeout = '-w' if platform.system().lower() == 'windows' else '-W'
-    valor_timeout = '1000' if platform.system().lower() == 'windows' else '1'
-    
-    comando = ['ping', parametro, '1', timeout, valor_timeout, ip]
-    
-    try:
-        saida = subprocess.run(comando, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return saida.returncode == 0
-    except:
-        return False
+import pandas as pd
+import plotly.express as px
+import streamlit as st
 
 def show_dashboard():
-    """Exibe indicadores gerais e tabelas altamente estilizadas usando CSS customizado."""
-    if 'status_rede' not in st.session_state:
-        st.session_state['status_rede'] = {}
+    st.title("📊 Dashboard de Impressoras")
+    st.markdown("---")
 
-    css = """<style>
-    .dash-card { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.04); border: 1px solid #f0f0f0; margin-bottom: 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    .metric-container { display: flex; justify-content: space-between; padding: 15px 10px; }
-    .metric-box { flex: 1; border-right: 1px solid #eee; padding: 0 15px; }
-    .metric-box:last-child { border-right: none; }
-    .metric-title { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .metric-value { font-size: 32px; font-weight: 700; margin: 4px 0; color: #0f172a; }
-    .metric-sub { font-size: 12px; color: #94a3b8; }
-    .metric-sub.danger { color: #ef4444; font-weight: 500; }
-    .metric-value.danger { color: #b91c1c; }
-    .badge-ip { background-color: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;}
-    .badge-usb { background-color: #f1f5f9; color: #475569; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;}
-    .badge-ok { background-color: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;}
-    .badge-alerta { background-color: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;}
-    .badge-cinza { background-color: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;}
-    .custom-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .custom-table th { text-align: left; padding: 12px 10px; border-bottom: 2px solid #f1f5f9; color: #64748b; font-weight: 600; }
-    .custom-table td { padding: 14px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-    .row-number { color: #94a3b8; font-size: 12px; width: 20px; }
-    .model-name { font-weight: 700; color: #1e293b; font-size: 13px; }
-    .user-name { color: #64748b; font-size: 11px; display: block; margin-top: 3px; }
-    .setor-name { color: #475569; font-size: 12px; }
-    .sup-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
-    .sup-item:last-child { border-bottom: none; }
-    .sup-name { font-weight: 700; font-size: 13px; color: #1e293b; }
-    .sup-desc { font-size: 11px; color: #64748b; margin-top: 2px; }
-    .section-title { margin-top: 0; margin-bottom: 15px; color: #334155; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;}
-    </style>"""
-    st.markdown(css, unsafe_allow_html=True)
+    # 1. Puxa os dados brutos do banco
+    query_imp = "SELECT i.modelo, i.usuario_responsavel, s.nome as setor, i.tipo_conexao, i.endereco_rede FROM impressoras i LEFT JOIN setores s ON i.setor_id = s.id"
+    dados_imp = db.fetch_data(query_imp)
+    
+    if not dados_imp:
+        st.info("Nenhuma impressora encontrada no banco de dados.")
+        return
+        
+    # 2. Converte para DataFrame e define as colunas DE FORMA BLINDADA
+    df_imp = pd.DataFrame(dados_imp)
+    
+    # Pega apenas as colunas exatas que vieram do banco
+    df_imp = df_imp[['modelo', 'usuario_responsavel', 'setor', 'tipo_conexao', 'endereco_rede']]
+    
+    # Força os nomes formatados para a tela
+    df_imp.columns = ['Modelo', 'Usuário', 'Setor', 'Conexão', 'Rede/IP']
 
-    total_imp = db.fetch_data("SELECT COUNT(*) as total FROM impressoras")[0]['total']
-    total_ip = db.fetch_data("SELECT COUNT(*) as total FROM impressoras WHERE tipo_conexao = 'IP'")[0]['total']
-    total_usb = db.fetch_data("SELECT COUNT(*) as total FROM impressoras WHERE tipo_conexao = 'USB'")[0]['total']
-    total_setores = db.fetch_data("SELECT COUNT(DISTINCT setor_id) as total FROM impressoras")[0]['total']
+    # Tratamento para limpar vazios e evitar o erro do "nan"
+    df_imp['Setor'] = df_imp['Setor'].fillna("NÃO DEFINIDO").replace(["None", "", "none"], "NÃO DEFINIDO").astype(str).str.strip().str.upper()
+    df_imp['Usuário'] = df_imp['Usuário'].fillna("-").replace(["None", ""], "-")
+    df_imp['Conexão'] = df_imp['Conexão'].fillna("-").replace(["None", ""], "-")
+    df_imp['Rede/IP'] = df_imp['Rede/IP'].fillna("-").replace(["None", ""], "-")
+
+    # 3. Calcula os totais para os cards superiores
+    total_imp = len(df_imp)
+    total_setores = df_imp['Setor'].nunique()
     total_alertas = db.fetch_data("SELECT COUNT(*) as total FROM estoque_suprimentos e JOIN suprimentos s ON e.suprimento_id = s.id WHERE e.quantidade <= 1")[0]['total']
 
-    offline_count = sum(1 for status in st.session_state['status_rede'].values() if status is False)
+    # --- 4. CARDS SUPERIORES ---
+    kpi_html = f"""
+    <div style="display: flex; gap: 20px; margin-bottom: 35px; flex-wrap: wrap;">
+        <div style="flex: 1; background-color: #ffffff; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
+            <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Total de Impressoras</div>
+            <div style="font-size: 36px; font-weight: 900; color: #1e293b; margin-top: 5px; line-height: 1;">🖨️ {total_imp}</div>
+        </div>
+        <div style="flex: 1; background-color: #ffffff; border-left: 5px solid #10b981; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
+            <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Setores Atendidos</div>
+            <div style="font-size: 36px; font-weight: 900; color: #1e293b; margin-top: 5px; line-height: 1;">🏢 {total_setores}</div>
+        </div>
+        <div style="flex: 1; background-color: #fffbeb; border-left: 5px solid #f59e0b; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
+            <div style="font-size: 12px; color: #b45309; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Suprimentos Críticos</div>
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 5px;">
+                <span style="font-size: 36px; font-weight: 900; color: #92400e; line-height: 1;">⚠️ {total_alertas}</span>
+                <span style="font-size: 10px; background: #fde68a; color: #92400e; padding: 4px 8px; border-radius: 12px; font-weight: bold;">Ação Necessária</span>
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(kpi_html.replace("\n", ""), unsafe_allow_html=True)
 
-    metrics_html = f"""<div class="dash-card metric-container">
-        <div class="metric-box"><div class="metric-title">TOTAL IMPRESSORAS</div><div class="metric-value">{total_imp}</div><div class="metric-sub">{total_setores} setores</div></div>
-        <div class="metric-box"><div class="metric-title">CONEXÃO IP</div><div class="metric-value">{total_ip}</div><div class="metric-sub">monitoráveis na rede</div></div>
-        <div class="metric-box"><div class="metric-title">STATUS DA REDE</div><div class="metric-value {'danger' if offline_count > 0 else ''}">{offline_count}</div><div class="metric-sub {'danger' if offline_count > 0 else ''}">impressoras offline</div></div>
-        <div class="metric-box"><div class="metric-title">EM ALERTA</div><div class="metric-value {'danger' if total_alertas > 0 else ''}">{total_alertas}</div><div class="metric-sub {'danger' if total_alertas > 0 else ''}">suprimentos críticos</div></div>
-    </div>"""
-    st.markdown(metrics_html, unsafe_allow_html=True)
-
-    col1, col2 = st.columns([1.4, 1])
+    col1, col2 = st.columns([1.3, 1.2])
 
     with col1:
-        dados_imp = db.fetch_data("SELECT i.modelo, i.usuario_responsavel, s.nome as setor, i.tipo_conexao, i.endereco_rede FROM impressoras i LEFT JOIN setores s ON i.setor_id = s.id ORDER BY i.modelo")
+        st.markdown("##### 🏢 Impressoras por Setor")
+        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
         
-        if st.button("📡 Testar Conexão de Rede Agora", type="primary", width="stretch"):
-            with st.spinner("A disparar Ping para todas as impressoras IP. Aguarde alguns segundos..."):
-                for row in dados_imp:
-                    if row['tipo_conexao'] == 'IP' and row['endereco_rede']:
-                        ip = row['endereco_rede']
-                        st.session_state['status_rede'][ip] = ping_ip(ip)
-            st.rerun()
-
-        table_html = '<div class="dash-card" style="margin-top: 15px;"><div class="section-title"><span>📋</span> INVENTÁRIO DE IMPRESSORAS</div><table class="custom-table"><tr><th></th><th>Modelo / Usuário</th><th>Setor</th><th>Conexão</th><th>Situação na Rede</th></tr>'
+        # Prepara os dados para o Gráfico
+        df_setores = df_imp['Setor'].value_counts().reset_index()
+        df_setores.columns = ['Setor', 'Quantidade']
+        df_setores = df_setores.sort_values(by='Quantidade', ascending=True)
         
-        for i, row in enumerate(dados_imp):
-            ip = row['endereco_rede']
+        # Desenha o Gráfico Plotly idêntico ao de Ativos
+        fig = px.bar(
+            df_setores,
+            x='Quantidade',
+            y='Setor',
+            orientation='h',
+            text='Quantidade',
+            color_discrete_sequence=["#005ea2"] 
+        )
+        
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="", showticklabels=False),
+            yaxis=dict(showgrid=False, title=""),
+            margin=dict(l=0, r=20, t=10, b=0),
+            height=400,
+            showlegend=False
+        )
+        fig.update_traces(textposition='outside', textfont_size=13, textfont_color="#334155")
+        st.plotly_chart(fig, width="stretch")
+        
+        # --- DETALHAMENTO POR SETOR ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("##### 🔍 Detalhes das Impressoras")
+        
+        lista_setores = df_setores.sort_values(by='Setor')['Setor'].tolist()
+        setor_selecionado = st.selectbox("Selecione o setor para visualizar as impressoras:", lista_setores)
+        
+        if setor_selecionado:
+            df_detalhe = df_imp[df_imp['Setor'] == setor_selecionado].copy()
+            df_detalhe = df_detalhe[['Modelo', 'Usuário', 'Conexão', 'Rede/IP']]
             
-            if row['tipo_conexao'] == 'IP':
-                ip_badge = f"<span class='badge-ip'>{ip}</span>"
-                if ip in st.session_state['status_rede']:
-                    if st.session_state['status_rede'][ip]:
-                        status_badge = "<span class='badge-ok'>🟢 ONLINE</span>"
-                    else:
-                        status_badge = "<span class='badge-alerta'>🔴 OFFLINE</span>"
-                else:
-                    status_badge = "<span class='badge-cinza'>⏳ Aguardando Teste</span>"
-            else:
-                ip_badge = "<span class='badge-usb'>USB</span>"
-                status_badge = "<span class='badge-ok'>OK (Local)</span>"
-
-            table_html += f"<tr><td class='row-number'>{i+1}</td><td><span class='model-name'>{row['modelo']}</span><span class='user-name'>{row['usuario_responsavel']}</span></td><td class='setor-name'>{row['setor'] or 'N/A'}</td><td>{ip_badge}</td><td>{status_badge}</td></tr>"
-        table_html += "</table></div>"
-        st.markdown(table_html, unsafe_allow_html=True)
+            # --- TABELA 1 COMPACTADA ---
+            html_detalhes = f"""
+            <div style="overflow-x: auto; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 11px;">
+                    <thead>
+                        <tr style="background-color: #005ea2; color: white; text-align: left;">
+                            <th style="padding: 8px 10px; font-weight: 600;">Modelo</th>
+                            <th style="padding: 8px 10px; font-weight: 600;">Usuário/Local</th>
+                            <th style="padding: 8px 10px; font-weight: 600;">Conexão</th>
+                            <th style="padding: 8px 10px; font-weight: 600;">IP/Rede</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            """
+            for i, (index, row) in enumerate(df_detalhe.iterrows()):
+                bg_color = "#ffffff" if i % 2 == 0 else "#f8fafc"
+                html_detalhes += f"""
+                        <tr style="background-color: {bg_color}; border-bottom: 1px solid #e2e8f0; color: #334155;">
+                            <td style="padding: 8px 10px; font-weight: 600;">{row['Modelo']}</td>
+                            <td style="padding: 8px 10px;">{row['Usuário']}</td>
+                            <td style="padding: 8px 10px;">{row['Conexão']}</td>
+                            <td style="padding: 8px 10px;">{row['Rede/IP']}</td>
+                        </tr>
+                """
+            html_detalhes += """
+                    </tbody>
+                </table>
+            </div>
+            """
+            st.markdown(html_detalhes.replace("\n", ""), unsafe_allow_html=True)
 
     with col2:
-        dados_sup = db.fetch_data("SELECT s.categoria, s.cor_tipo, COALESCE(e.quantidade, 0) as qtd FROM suprimentos s LEFT JOIN estoque_suprimentos e ON s.id = e.suprimento_id ORDER BY qtd ASC")
-        sup_html = '<div class="dash-card"><div class="section-title"><span>💧</span> QUANTIDADE DE TONERS E TINTAS</div>'
-        for row in dados_sup:
-            qtd = row['qtd']
-            badge = "<span class='badge-alerta'>Alerta</span>" if qtd <= 1 else "<span class='badge-ok'>OK</span>"
-            sup_html += f"<div class='sup-item'><div><div class='sup-name'>{row['categoria']} — {row['cor_tipo']}</div><div class='sup-desc'>Qtd Atual: {qtd}</div></div><div style='display:flex; gap: 12px; align-items:center;'><span style='font-size:14px; font-weight:700; color:#334155;'>{qtd}</span> {badge}</div></div>"
-        sup_html += "</div>"
-        st.markdown(sup_html, unsafe_allow_html=True)
-
-        dados_setor = db.fetch_data("SELECT s.nome, COUNT(i.id) as qtd FROM impressoras i JOIN setores s ON i.setor_id = s.id GROUP BY s.nome ORDER BY qtd DESC LIMIT 5")
-        setor_html = '<div class="dash-card"><div class="section-title"><span>📊</span> QUANTIDADE DE IMPRESSORAS POR DP</div>'
-        if dados_setor:
-            max_qtd = max([r['qtd'] for r in dados_setor])
-            for row in dados_setor:
-                pct = int((row['qtd'] / max_qtd) * 100) if max_qtd > 0 else 0
-                setor_html += f"<div style='display: flex; align-items: center; margin-bottom: 14px; font-size: 12px; font-weight: 600; color: #1e293b;'><div style='width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{row['nome']}</div><div style='flex-grow: 1; background-color: #f1f5f9; height: 6px; border-radius: 4px; margin: 0 12px;'><div style='width: {pct}%; background-color: #3b82f6; height: 100%; border-radius: 4px;'></div></div><div style='width: 20px; text-align: right; color: #64748b;'>{row['qtd']}</div></div>"
+        st.markdown("##### 🔌 Conexão por Departamento")
+        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True) 
+        
+        # Agrupa impressoras por setor e tipo de conexão (IP / USB)
+        query_conexao = """
+            SELECT s.nome as setor, 
+                   COUNT(CASE WHEN i.tipo_conexao = 'IP' THEN 1 END) as ip_count,
+                   COUNT(CASE WHEN i.tipo_conexao = 'USB' THEN 1 END) as usb_count
+            FROM impressoras i
+            LEFT JOIN setores s ON i.setor_id = s.id
+            GROUP BY s.nome
+            ORDER BY s.nome
+        """
+        dados_conexao = db.fetch_data(query_conexao)
+        
+        if dados_conexao:
+            df_conn = pd.DataFrame(dados_conexao)
+            df_conn['setor'] = df_conn['setor'].fillna("NÃO DEFINIDO").astype(str).str.upper()
+            
+            # --- TABELA 2 COMPACTADA ---
+            html_tabela = f"""
+            <div style="overflow-x: auto; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 11px;">
+                    <thead>
+                        <tr style="background-color: #005ea2; color: white; text-align: left;">
+                            <th style="padding: 8px 10px; font-weight: 600;">Setor</th>
+                            <th style="padding: 8px 10px; font-weight: 600; text-align: center;">🌐 IP (Rede)</th>
+                            <th style="padding: 8px 10px; font-weight: 600; text-align: center;">💻 USB (Local)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            """
+            for index, row in enumerate(df_conn.itertuples()):
+                bg_color = "#ffffff" if index % 2 == 0 else "#f8fafc"
+                html_tabela += f"""
+                        <tr style="background-color: {bg_color}; border-bottom: 1px solid #e2e8f0; color: #334155;">
+                            <td style="padding: 8px 10px; font-weight: 600;">{row.setor}</td>
+                            <td style="padding: 8px 10px; text-align: center;">{row.ip_count}</td>
+                            <td style="padding: 8px 10px; text-align: center;">{row.usb_count}</td>
+                        </tr>
+                """
+            html_tabela += """
+                    </tbody>
+                </table>
+            </div>
+            """
+            st.markdown(html_tabela.replace("\n", ""), unsafe_allow_html=True)
         else:
-            setor_html += "<p style='font-size: 13px; color:#888;'>Sem dados cadastrados.</p>"
-        setor_html += "</div>"
-        st.markdown(setor_html, unsafe_allow_html=True)
+            st.info("Nenhum dado de conexão encontrado.")
+
+    # ==========================================
+    # --- 5. RESUMO DE CONSUMO (NOTÍCIAS) ---
+    # ==========================================
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("##### 📰 Destaques de Consumo")
+    
+    # Query para descobrir o setor que mais consumiu
+    query_top_setor = "SELECT departamento, SUM(quantidade) as total FROM historico_saidas GROUP BY departamento ORDER BY total DESC LIMIT 1"
+    top_setor_data = db.fetch_data(query_top_setor)
+    
+    # Query para descobrir o suprimento mais retirado
+    query_top_item = "SELECT item, SUM(quantidade) as total FROM historico_saidas GROUP BY item ORDER BY total DESC LIMIT 1"
+    top_item_data = db.fetch_data(query_top_item)
+    
+    # Se houver dados no histórico, montamos os cards de notícia
+    if top_setor_data and top_item_data:
+        setor_campeao = top_setor_data[0]['departamento']
+        qtd_setor = top_setor_data[0]['total']
+        
+        item_campeao = top_item_data[0]['item']
+        qtd_item = top_item_data[0]['total']
+        
+        # Formatando o texto se o departamento for nulo ou vazio
+        if not setor_campeao: setor_campeao = "NÃO DEFINIDO"
+        
+        html_noticias = f"""
+        <style>
+            .card-dinamico {{
+                transition: transform 0.2s ease, box-shadow 0.2s ease;
+            }}
+            .card-dinamico:hover {{
+                transform: translateY(-5px);
+                box-shadow: 0 8px 15px rgba(0,0,0,0.15) !important;
+            }}
+        </style>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 10px;">
+            <div class="card-dinamico" style="flex: 1; background-color: #fff1f2; border-left: 5px solid #e11d48; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div style="font-size: 12px; color: #9f1239; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">🔥 Maior Consumo por Setor</div>
+                <div style="font-size: 15px; color: #1e293b; margin-top: 8px; line-height: 1.5;">
+                    O setor de <b>{str(setor_campeao).upper()}</b> lidera as requisições, com um total de <b>{qtd_setor}</b> suprimentos retirados do estoque até o momento.
+                </div>
+            </div>
+            
+            <div class="card-dinamico" style="flex: 1; background-color: #fdf4ff; border-left: 5px solid #c026d3; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div style="font-size: 12px; color: #86198f; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">📈 Suprimento Mais Utilizado</div>
+                <div style="font-size: 15px; color: #1e293b; margin-top: 8px; line-height: 1.5;">
+                    O item <b>{str(item_campeao).upper()}</b> é o mais requisitado no sistema, com <b>{qtd_item}</b> unidades já utilizadas pelas impressoras.
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(html_noticias.replace("\n", ""), unsafe_allow_html=True)
+    else:
+        st.info("Ainda não há dados suficientes de saídas para gerar os destaques de consumo.")
 
 def show_Cadastro_de_Impressoras():
     st.title("🖨️ Cadastro de Impressoras")
@@ -255,6 +368,89 @@ def show_Cadastro_de_Impressoras():
                         st.warning("Os campos 'Modelo' e 'Usuário' são obrigatórios.")
         st.markdown("---")
 
+        # ==========================================
+    # --- BLOCO DE EDIÇÃO DE IMPRESSORAS ---
+    # ==========================================
+    with st.expander("📝 Editar Dados da Impressora"):
+        if somente_leitura:
+            st.warning("Seu perfil de acesso permite apenas visualização.")
+        else:
+            # Puxa todas as impressoras para o selectbox
+            query_todas = "SELECT id, modelo, usuario_responsavel, setor_id, tipo_conexao, endereco_rede FROM impressoras ORDER BY modelo"
+            todas_imp = db.fetch_data(query_todas)
+
+            if not todas_imp:
+                st.info("Nenhuma impressora cadastrada no momento.")
+            else:
+                # Prepara as opções para o Selectbox
+                opcoes_imp = {imp['id']: f"{imp['modelo']} - {imp['usuario_responsavel']}" for imp in todas_imp}
+                
+                imp_selecionada_id = st.selectbox(
+                    "Selecione a Impressora que deseja alterar:", 
+                    options=list(opcoes_imp.keys()), 
+                    format_func=lambda x: opcoes_imp[x]
+                )
+
+                if imp_selecionada_id:
+                    # Encontra os dados da impressora selecionada na lista que já puxamos
+                    detalhes = next((item for item in todas_imp if item["id"] == imp_selecionada_id), None)
+                    
+                    if detalhes:
+                        with st.form(key=f"form_edit_imp_{imp_selecionada_id}"):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                novo_modelo = st.text_input("Modelo", value=detalhes.get('modelo', ''))
+                                
+                                # --- CORREÇÃO DA LISTA DE SETORES ---
+                                nomes_setores = list(opcoes_setores.keys())
+                                current_setor_id = detalhes.get('setor_id')
+                                
+                                # Descobre o NOME do setor atual comparando os IDs
+                                current_setor_nome = None
+                                for nome, s_id in opcoes_setores.items():
+                                    if str(s_id) == str(current_setor_id):
+                                        current_setor_nome = nome
+                                        break
+                                
+                                try:
+                                    setor_index = nomes_setores.index(current_setor_nome)
+                                except ValueError:
+                                    setor_index = 0
+                                
+                                novo_setor_nome = st.selectbox("Setor", options=nomes_setores, index=setor_index)
+
+                            with col2:
+                                novo_usuario = st.text_input("Usuário/Local", value=detalhes.get('usuario_responsavel', ''))
+                                
+                                # Tipo de conexão e IP
+                                conn_atual = detalhes.get('tipo_conexao', 'USB')
+                                index_conn = 0 if conn_atual == 'IP' else 1
+                                novo_tipo = st.selectbox("Tipo de Conexão", ["IP", "USB"], index=index_conn)
+                                novo_ip = st.text_input("Endereço IP (Deixe em branco se for USB)", value=detalhes.get('endereco_rede', '') or '')
+
+                            submit_edit = st.form_submit_button("💾 Salvar Alterações")
+
+                            if submit_edit:
+                                if not novo_modelo or not novo_usuario:
+                                    st.error("⚠️ Os campos Modelo e Usuário/Local são obrigatórios.")
+                                else:
+                                    if novo_tipo == 'USB':
+                                        novo_ip = None
+                                    
+                                    # Pega o ID real do setor escolhido para salvar no banco
+                                    novo_setor_id = opcoes_setores[novo_setor_nome]
+                                        
+                                    query_update = """
+                                        UPDATE impressoras 
+                                        SET modelo = %s, usuario_responsavel = %s, setor_id = %s, tipo_conexao = %s, endereco_rede = %s
+                                        WHERE id = %s
+                                    """
+                                    params = (novo_modelo, novo_usuario, novo_setor_id, novo_tipo, novo_ip, imp_selecionada_id)
+                                    db.execute_query(query_update, params)
+                                    
+                                    st.success("✅ Dados atualizados com sucesso!")
+                                    st.rerun()
     query = "SELECT i.id as ID, i.modelo as Modelo, i.usuario_responsavel as Usuário, s.nome as Setor, i.tipo_conexao as Conexão, i.endereco_rede as IP FROM impressoras i LEFT JOIN setores s ON i.setor_id = s.id ORDER BY i.modelo"
     dados_imp = db.fetch_data(query)
     
@@ -428,13 +624,94 @@ def enviar_alerta_suprimentos_novo():
             """
         corpo_html += "</table>"
 
-    corpo_html += """
-        <br>
-        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-top: 30px;">
-        <p style="font-size: 11px; color: #94a3b8; text-align: center;">Este é um e-mail automático gerado pelo sistema de gestão de ativos Regispel.</p>
-    </body>
-    </html>
-    """
+    # --- TABELA 4: MINI DASHBOARD E CONSUMO DA SEMANA (ÚLTIMOS 7 DIAS) ---
+    from datetime import datetime, timedelta
+    
+    # 1. Calcula a data limite de 7 dias atrás
+    data_limite = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+    
+    try:
+        # Consulta SQL usando a estrutura do seu projeto (db.fetch_data)
+        query_semana = f"SELECT departamento, item, quantidade FROM historico_saidas WHERE data_saida >= '{data_limite}'"
+        saidas_semana = db.fetch_data(query_semana)
+    except Exception as e:
+        saidas_semana = []
+        
+    if saidas_semana:
+        # LÓGICA PYTHON: Calculando os campeões da semana
+        consumo_por_dpto = {}
+        consumo_por_item = {}
+        total_semana = 0
+        
+        for saida in saidas_semana:
+            # Garante leitura tanto por dicionário quanto por objeto
+            qtd = int(saida.get('quantidade', 0) if isinstance(saida, dict) else getattr(saida, 'quantidade', 0))
+            dpto = saida.get('departamento', '-') if isinstance(saida, dict) else getattr(saida, 'departamento', '-')
+            item = saida.get('item', '-') if isinstance(saida, dict) else getattr(saida, 'item', '-')
+            
+            consumo_por_dpto[dpto] = consumo_por_dpto.get(dpto, 0) + qtd
+            consumo_por_item[item] = consumo_por_item.get(item, 0) + qtd
+            total_semana += qtd
+            
+        top_dpto = max(consumo_por_dpto, key=consumo_por_dpto.get) if consumo_por_dpto else "-"
+        top_dpto_qtd = consumo_por_dpto.get(top_dpto, 0)
+        
+        top_item = max(consumo_por_item, key=consumo_por_item.get) if consumo_por_item else "-"
+        top_item_qtd = consumo_por_item.get(top_item, 0)
+
+        # MONTANDO O HTML: Mini Dashboard + Tabela Detalhada
+        corpo_html += f"""
+        <h3 style="color: #15803d; margin-top: 35px;">📦 MOVIMENTAÇÃO DA SEMANA (ÚLTIMOS 7 DIAS)</h3>
+        
+        <!-- CARDS DO DASHBOARD -->
+        <table style="width:100%; margin-bottom: 20px; border-collapse: separate; border-spacing: 10px 0;">
+            <tr>
+                <td style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; text-align: center; border-radius: 5px; width: 33%;">
+                    <span style="color: #166534; font-size: 12px; font-weight: bold; text-transform: uppercase;">Total Retirado</span><br>
+                    <span style="color: #15803d; font-size: 24px; font-weight: bold;">{total_semana}</span><br>
+                    <span style="color: #166534; font-size: 12px;">unidades</span>
+                </td>
+                <td style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; text-align: center; border-radius: 5px; width: 33%;">
+                    <span style="color: #1e3a8a; font-size: 12px; font-weight: bold; text-transform: uppercase;">Maior Consumidor</span><br>
+                    <span style="color: #1d4ed8; font-size: 16px; font-weight: bold;">{top_dpto}</span><br>
+                    <span style="color: #3b82f6; font-size: 12px;">({top_dpto_qtd} un.)</span>
+                </td>
+                <td style="background-color: #fffbeb; border: 1px solid #fde68a; padding: 15px; text-align: center; border-radius: 5px; width: 33%;">
+                    <span style="color: #92400e; font-size: 12px; font-weight: bold; text-transform: uppercase;">Item Mais Pedido</span><br>
+                    <span style="color: #d97706; font-size: 16px; font-weight: bold;">{top_item}</span><br>
+                    <span style="color: #f59e0b; font-size: 12px;">({top_item_qtd} un.)</span>
+                </td>
+            </tr>
+        </table>
+
+        <!-- TABELA DETALHADA -->
+        <table style="width:100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #bbf7d0;">
+            <tr style="background-color: #f0fdf4; border-bottom: 2px solid #22c55e;">
+                <th style="padding: 10px; text-align: left;">Departamento Destino</th>
+                <th style="padding: 10px; text-align: left;">Item / Modelo Consumido</th>
+                <th style="padding: 10px; text-align: center; width: 100px;">Qtd Entregue</th>
+            </tr>
+        """
+        for saida in saidas_semana:
+            dpto_val = saida.get('departamento', '-') if isinstance(saida, dict) else getattr(saida, 'departamento', '-')
+            item_val = saida.get('item', '-') if isinstance(saida, dict) else getattr(saida, 'item', '-')
+            qtd_val = saida.get('quantidade', 0) if isinstance(saida, dict) else getattr(saida, 'quantidade', 0)
+            
+            corpo_html += f"""
+            <tr style="border-bottom: 1px solid #bbf7d0;">
+                <td style="padding: 10px; font-weight: bold;">{dpto_val}</td>
+                <td style="padding: 10px;">{item_val}</td>
+                <td style="padding: 10px; text-align: center; color: #166534; font-weight: bold; font-size: 16px;">{qtd_val}</td>
+            </tr>
+            """
+        corpo_html += "</table>"
+    else:
+        corpo_html += """
+        <h3 style="color: #15803d; margin-top: 35px;">📦 MOVIMENTAÇÃO DA SEMANA (ÚLTIMOS 7 DIAS)</h3>
+        <p style="color: #64748b; font-style: italic; border-left: 3px solid #cbd5e1; padding-left: 10px;">
+            Nenhuma saída de suprimento foi registrada nos últimos 7 dias.
+        </p>
+        """
     
     msg.attach(MIMEText(corpo_html, 'html', 'utf-8'))
     
@@ -495,7 +772,7 @@ def show_estoque_de_suprimentos():
                     with col_f2:
                         qtd_mov = st.number_input("Qtd Retirada", min_value=1, step=1)
                     with col_f3:
-                        departamento = st.selectbox("Departamento Destino", ["Qualidade", "Almoxarifado", "Expedição", "Produção", "RH/DP", "PCP", "Comercial", "Diretoria", "Líderes de Produção", "Compras"])
+                        departamento = st.selectbox("Departamento Destino", ["Qualidade", "Almoxarifado", "Expedição", "Produção", "RH/DP", "PCP", "Comercial", "Diretoria", "Líderes de Produção", "Compras", "Marketing", ])
                         
                     obs_pedido = st.text_input("Anotação opcional (Ex: Entregue para o João)")
                     limpar_nota = False 
@@ -728,9 +1005,14 @@ def show_cadastros():
                     st.rerun()
                 except: st.error("Esse setor já existe.")
         st.markdown("---")
-        dados_setores = db.fetch_data("SELECT id, nome as Nome FROM setores ORDER BY nome")
+        
+        # --- TABELA DE SETORES BLINDADA ---
+        dados_setores = db.fetch_data("SELECT id, nome FROM setores ORDER BY nome")
         if dados_setores:
-            st.dataframe(pd.DataFrame(dados_setores)[["Nome"]], hide_index=True, width="stretch")
+            df_setores = pd.DataFrame(dados_setores)
+            df_setores = df_setores[['id', 'nome']]
+            df_setores.columns = ['ID', 'Nome']
+            st.dataframe(df_setores[["Nome"]], hide_index=True, width="stretch")
 
     with tab2:
         setores_disp = db.fetch_data("SELECT nome FROM setores ORDER BY nome")
@@ -753,26 +1035,33 @@ def show_cadastros():
                     except: st.error("Este item já existe.")
         
         st.markdown("---")
-        dados_sup = db.fetch_data("SELECT id, categoria as Categoria, cor_tipo as 'Cor/Tipo', departamentos_uso as 'Departamentos' FROM suprimentos ORDER BY categoria")
+        
+        # --- TABELA DE SUPRIMENTOS BLINDADA ---
+        dados_sup = db.fetch_data("SELECT id, categoria, cor_tipo, departamentos_uso FROM suprimentos ORDER BY categoria")
         if dados_sup: 
             df_sup_cad = pd.DataFrame(dados_sup)
+            df_sup_cad = df_sup_cad[['id', 'categoria', 'cor_tipo', 'departamentos_uso']]
+            df_sup_cad.columns = ['ID', 'Categoria', 'Cor/Tipo', 'Departamentos']
             df_sup_cad.fillna("", inplace=True)
-            st.dataframe(df_sup_cad.drop(columns=["id"]), hide_index=True, width="stretch")
+            
+            st.dataframe(df_sup_cad.drop(columns=["ID"]), hide_index=True, width="stretch")
             
             with st.expander("✏️ Editar um Suprimento"):
-                opcoes_edit_sup = {f"{row['Categoria']} - {row['Cor/Tipo']}": row["id"] for _, row in df_sup_cad.iterrows()}
+                opcoes_edit_sup = {f"{row['Categoria']} - {row['Cor/Tipo']}": row["ID"] for _, row in df_sup_cad.iterrows()}
                 sup_para_editar = st.selectbox("Selecione o Suprimento para editar:", list(opcoes_edit_sup.keys()), key="sel_edit_sup")
                 
                 if sup_para_editar:
                     id_sup_sel = opcoes_edit_sup[sup_para_editar]
-                    dados_atuais_sup = next(item for item in dados_sup if item["id"] == id_sup_sel)
+                    
+                    # Puxamos os dados da linha exata que foi selecionada já tratada
+                    linha_edit = df_sup_cad[df_sup_cad['ID'] == id_sup_sel].iloc[0]
                     
                     with st.form("form_edit_sup"):
                         col_e1, col_e2 = st.columns(2)
-                        with col_e1: cat_edit = st.text_input("Categoria", value=dados_atuais_sup["Categoria"])
-                        with col_e2: cor_edit = st.text_input("Cor/Tipo", value=dados_atuais_sup["Cor/Tipo"])
+                        with col_e1: cat_edit = st.text_input("Categoria", value=linha_edit["Categoria"])
+                        with col_e2: cor_edit = st.text_input("Cor/Tipo", value=linha_edit["Cor/Tipo"])
                         
-                        deps_atuais_str = dados_atuais_sup["Departamentos"]
+                        deps_atuais_str = linha_edit["Departamentos"]
                         deps_atuais_lista = [d.strip() for d in deps_atuais_str.split(",")] if deps_atuais_str else []
                         deps_atuais_validos = [d for d in deps_atuais_lista if d in lista_setores]
                         
@@ -786,7 +1075,7 @@ def show_cadastros():
                             st.rerun()
 
             with st.expander("🗑️ Excluir um Suprimento"):
-                opcoes_del_sup = {f"{row['Categoria']} - {row['Cor/Tipo']}": row["id"] for _, row in df_sup_cad.iterrows()}
+                opcoes_del_sup = {f"{row['Categoria']} - {row['Cor/Tipo']}": row["ID"] for _, row in df_sup_cad.iterrows()}
                 sup_para_deletar = st.selectbox("Selecione o suprimento para excluir:", list(opcoes_del_sup.keys()), key="sel_del_sup")
                 if st.button("Confirmar Exclusão"):
                     db.delete_data("DELETE FROM suprimentos WHERE id = ?", (opcoes_del_sup[sup_para_deletar],))
@@ -827,13 +1116,16 @@ def show_cadastros():
         st.markdown("---")
         st.markdown("### Integrantes Cadastrados")
         
-        dados_tec = db.fetch_data("SELECT id, nome as Nome, usuario as Login, perfil as 'Nível de Acesso' FROM tecnicos ORDER BY nome")
+        # --- TABELA DE TÉCNICOS BLINDADA ---
+        dados_tec = db.fetch_data("SELECT id, nome, usuario, perfil FROM tecnicos ORDER BY nome")
         if dados_tec:
             df_tec = pd.DataFrame(dados_tec)
-            st.dataframe(df_tec.drop(columns=['id']), hide_index=True, width="stretch")
+            df_tec = df_tec[['id', 'nome', 'usuario', 'perfil']]
+            df_tec.columns = ['ID', 'Nome', 'Login', 'Nível de Acesso']
+            st.dataframe(df_tec.drop(columns=['ID']), hide_index=True, width="stretch")
             
             with st.expander("🗑️ Remover um Integrante"):
-                opcoes_del_tec = {f"{row['Nome']} ({row['Nível de Acesso']})": row['id'] for _, row in df_tec.iterrows()}
+                opcoes_del_tec = {f"{row['Nome']} ({row['Nível de Acesso']})": row['ID'] for _, row in df_tec.iterrows()}
                 tec_deletar = st.selectbox("Selecione quem deseja remover:", list(opcoes_del_tec.keys()))
                 if st.button("🔴 Excluir Acesso", width="stretch"):
                     if "ADMINISTRADOR" in tec_deletar.upper() and df_tec[df_tec['Nível de Acesso'] == 'Administrador'].shape[0] <= 1:
