@@ -68,7 +68,7 @@ def render_sidebar():
     
     # --- CHAVE MESTRA: SELETOR DE MÓDULOS ---
     modulo = st.sidebar.selectbox(
-        "Selecione o Sistema:",
+        "Selecione o Ambiente:",
         ["🖨️ Gestão de Impressoras", "💻 Controle de Ativos"]
     )
     
@@ -916,8 +916,14 @@ def show_estoque_de_suprimentos():
     # ==========================================
     st.markdown("#### 📈 Resumo Geral de Saídas")
     
-    # 1. Busca o histórico de saídas
-    query_hist = "SELECT departamento, item, quantidade FROM historico_saidas"
+    # 0. Truque: Força a criação da coluna de data no banco, caso ela não exista
+    try:
+        db.execute_query("ALTER TABLE historico_saidas ADD COLUMN data_saida TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    except:
+        pass # Se a coluna já existir, ele ignora o erro e segue em frente
+    
+    # 1. Busca o histórico de saídas puxando a nova coluna "data_saida"
+    query_hist = "SELECT data_saida, departamento, item, quantidade FROM historico_saidas ORDER BY data_saida DESC"
     dados_hist = db.fetch_data(query_hist)
     
     if dados_hist:
@@ -926,59 +932,222 @@ def show_estoque_de_suprimentos():
         # 2. Cálculo dos 3 Indicadores Principais
         total_consumido = df_hist['quantidade'].sum()
         
-        # Descobre o Item mais pedido
         df_itens = df_hist.groupby('item')['quantidade'].sum().reset_index().sort_values(by='quantidade', ascending=False)
         item_campeao = df_itens.iloc[0]['item']
         qtd_item_campeao = df_itens.iloc[0]['quantidade']
         
-        # Descobre o Setor que mais pediu
         df_setores = df_hist.groupby('departamento')['quantidade'].sum().reset_index().sort_values(by='quantidade', ascending=False)
         setor_campeao = df_setores.iloc[0]['departamento']
         qtd_setor_campeao = df_setores.iloc[0]['quantidade']
         
-        # 3. Renderiza os cartões de métrica
-        dash1, dash2, dash3 = st.columns(3)
-        dash1.metric("📦 Total de Insumos Entregues", f"{total_consumido} un.")
-        dash2.metric("🔝 Item Mais Requisitado", f"{item_campeao}", f"{qtd_item_campeao} un.")
-        dash3.metric("🏢 Maior Setor Consumidor", f"{setor_campeao}", f"{qtd_setor_campeao} un.")
+        # 3. Renderiza os cartões de métrica estilizados (Cards HTML)
+        html_cards = f"""
+        <style>
+            .kpi-container {{
+                display: flex;
+                gap: 15px;
+                margin-bottom: 25px;
+                flex-wrap: wrap;
+            }}
+            .kpi-card {{
+                background-color: #ffffff;
+                border-left: 5px solid #005ea2; /* Azul Regispel */
+                border-radius: 6px;
+                padding: 20px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                transition: transform 0.2s ease, box-shadow 0.2s ease;
+                flex: 1;
+                min-width: 200px;
+            }}
+            .kpi-card:hover {{
+                transform: translateY(-4px);
+                box-shadow: 0 8px 15px rgba(0,0,0,0.15);
+            }}
+            .kpi-title {{
+                font-size: 13px;
+                color: #64748b;
+                font-weight: 600;
+                margin-bottom: 8px;
+            }}
+            .kpi-value {{
+                font-size: 22px;
+                color: #0f172a;
+                font-weight: 700;
+                margin-bottom: 4px;
+            }}
+            .kpi-subtext {{
+                font-size: 12px;
+                color: #10b981;
+                font-weight: 600;
+                background-color: #d1fae5;
+                padding: 2px 6px;
+                border-radius: 4px;
+                display: inline-block;
+            }}
+        </style>
         
-        # 4. Tabela detalhada
-        df_detalhado = df_hist.groupby(['departamento', 'item'])['quantidade'].sum().reset_index()
-        df_detalhado = df_detalhado.sort_values(by=['departamento', 'quantidade'], ascending=[True, False])
+        <div class="kpi-container">
+            <div class="kpi-card">
+                <div class="kpi-title">📦 Total Entregue</div>
+                <div class="kpi-value">{total_consumido}</div>
+                <div class="kpi-subtext">unidades no total</div>
+            </div>
+            
+            <div class="kpi-card">
+                <div class="kpi-title">🔝 Item Mais Requisitado</div>
+                <div class="kpi-value">{item_campeao}</div>
+                <div class="kpi-subtext">↑ {qtd_item_campeao} un.</div>
+            </div>
+            
+            <div class="kpi-card">
+                <div class="kpi-title">🏢 Maior Consumidor</div>
+                <div class="kpi-value">{setor_campeao}</div>
+                <div class="kpi-subtext">↑ {qtd_setor_campeao} un.</div>
+            </div>
+        </div>
+        """
+        st.markdown(html_cards.replace('\n', ''), unsafe_allow_html=True)
         
-        st.markdown("**📋 Detalhamento por Departamento e Item:**")
-        st.dataframe(
-            df_detalhado.rename(columns={
-                'departamento': 'Departamento', 
-                'item': 'Item / Modelo / Cor', 
-                'quantidade': 'Qtd Consumida'
-            }), 
-            use_container_width=True, 
-            hide_index=True
-        )
-    else:
-        st.info("Nenhuma saída registrada ainda. O dashboard ganhará vida assim que você registrar o primeiro consumo!")
+       # 4. Histórico Detalhado com Filtros de Pesquisa
+        st.markdown("<br>**📋 Histórico Detalhado de Saídas:**", unsafe_allow_html=True)
         
-    st.markdown("---")
+        # Garante que a data está no formato correto para extrair mês e ano
+        if 'data_saida' in df_hist.columns:
+            df_hist['data_saida_dt'] = pd.to_datetime(df_hist['data_saida'], errors='coerce')
+            
+            # Cria colunas ocultas para os filtros
+            df_hist['Mes'] = df_hist['data_saida_dt'].dt.month
+            df_hist['Ano'] = df_hist['data_saida_dt'].dt.year
+            
+            # Mapeia os meses para português
+            meses_map = {
+                1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 
+                5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 
+                9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
+            }
+            
+            # Monta o layout dos filtros lado a lado
+            col_f1, col_f2 = st.columns(2)
+            
+            # Filtro de Ano (busca apenas os anos que existem no banco)
+            lista_anos = ["Todos"] + sorted(df_hist['Ano'].dropna().unique().astype(int).astype(str).tolist(), reverse=True)
+            ano_selecionado = col_f1.selectbox("Filtrar por Ano:", lista_anos)
+            
+            # Filtro de Mês (busca apenas os meses que existem no banco)
+            meses_existentes = sorted(df_hist['Mes'].dropna().unique().astype(int).tolist())
+            lista_meses = ["Todos"] + [meses_map[m] for m in meses_existentes]
+            mes_selecionado = col_f2.selectbox("Filtrar por Mês:", lista_meses)
+            
+            # Aplica os filtros escolhidos pelo usuário
+            df_filtrado = df_hist.copy()
+            if ano_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['Ano'] == int(ano_selecionado)]
+            
+            if mes_selecionado != "Todos":
+                mes_num = [k for k, v in meses_map.items() if v == mes_selecionado][0]
+                df_filtrado = df_filtrado[df_filtrado['Mes'] == mes_num]
+            
+            # Formata a data final para exibição na tela
+            df_filtrado['data_exibicao'] = df_filtrado['data_saida_dt'].dt.strftime('%d/%m/%Y %H:%M').fillna("-")
+        else:
+            df_filtrado = df_hist.copy()
+            df_filtrado['data_exibicao'] = "-"
 
-    st.markdown("#### 📋 Modelos e Departamentos Vinculados")
-    df_tabela = df_sup.groupby('categoria')['departamentos'].first().reset_index()
-
-    html_tabela = '<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">'
-    html_tabela += '<tr style="background-color: #005ea2; color: white;">'
-    html_tabela += '<th style="padding: 10px; text-align: left; width: 25%; font-size: 13px;">Modelo do Suprimento</th>'
-    html_tabela += '<th style="padding: 10px; text-align: left; width: 75%; font-size: 13px;">Departamentos Atendidos</th>'
-    html_tabela += '</tr>'
-
-    for index, row in df_tabela.iterrows():
-        cor_fundo = "#f8f9fa" if index % 2 == 0 else "#ffffff"
-        html_tabela += f'<tr style="background-color: {cor_fundo}; border-bottom: 1px solid #e2e8f0;">'
-        html_tabela += f'<td style="padding: 10px; font-weight: 700; color: #000000; font-size: 12px;">{row["categoria"]}</td>'
-        html_tabela += f'<td style="padding: 10px; color: #000000; font-weight: 500; line-height: 1.4;">{row["departamentos"]}</td>'
-        html_tabela += '</tr>'
-
-    html_tabela += '</table>'
-    st.markdown(html_tabela, unsafe_allow_html=True)
+        # Verifica se sobrou algum dado após o filtro
+        if df_filtrado.empty:
+            st.warning("Nenhuma saída encontrada para o período selecionado.")
+        else:
+            # Monta a estrutura HTML dos cartões (AGORA MAIORES)
+            html_lista = """
+            <style>
+                .hist-container {
+                    max-height: 500px; /* Aumentei a altura máxima para caber os cards maiores */
+                    overflow-y: auto;
+                    padding-right: 8px;
+                    margin-top: 15px;
+                }
+                .hist-container::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .hist-container::-webkit-scrollbar-thumb {
+                    background-color: #cbd5e1;
+                    border-radius: 4px;
+                }
+                .hist-card {
+                    background-color: #ffffff;
+                    border: 1px solid #e2e8f0;
+                    border-left: 5px solid #005ea2; /* Azul Regispel um pouco mais espesso */
+                    border-radius: 8px;
+                    padding: 22px 25px; /* PADINGS MAIORES PARA DAR VOLUME */
+                    margin-bottom: 15px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.06);
+                    transition: background-color 0.2s ease;
+                }
+                .hist-card:hover {
+                    background-color: #f8fafc;
+                }
+                .hist-date {
+                    font-size: 13px; /* FONTE MAIOR */
+                    color: #64748b;
+                    font-weight: 600;
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                }
+                .hist-info {
+                    flex: 1;
+                    margin-left: 20px;
+                }
+                .hist-dept {
+                    font-size: 16px; /* FONTE MAIOR */
+                    color: #0f172a;
+                    font-weight: 700;
+                }
+                .hist-item-name {
+                    font-size: 14px; /* FONTE MAIOR */
+                    color: #475569;
+                    margin-top: 5px;
+                }
+                .hist-badge {
+                    background-color: #e0f2fe;
+                    color: #0369a1;
+                    font-size: 15px; /* FONTE MAIOR */
+                    font-weight: 700;
+                    padding: 8px 18px; /* BOTÃO MAIOR */
+                    border-radius: 6px;
+                    text-align: center;
+                    min-width: 100px;
+                }
+            </style>
+            <div class="hist-container">
+            """
+            
+            for _, row in df_filtrado.iterrows():
+                # Lógica para singular e plural
+                qtd = int(row['quantidade'])
+                texto_unidade = "unidade" if qtd == 1 else "unidades"
+                
+                html_lista += f"""
+                <div class="hist-card">
+                    <div style="width: 140px;">
+                        <div class="hist-date">🕒 {row['data_exibicao']}</div>
+                    </div>
+                    <div class="hist-info">
+                        <div class="hist-dept">🏢 {row['departamento']}</div>
+                        <div class="hist-item-name">📦 {row['item']}</div>
+                    </div>
+                    <div>
+                        <div class="hist-badge">{qtd} {texto_unidade}</div>
+                    </div>
+                </div>
+                """
+                
+            html_lista += "</div>"
+            
+            st.markdown(html_lista.replace('\n', ''), unsafe_allow_html=True)
     def show_importacao():
         st.title("📥 Importação de Dados")
         st.write("Aba de importação automática reservada para uso futuro.")
