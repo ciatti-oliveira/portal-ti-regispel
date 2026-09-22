@@ -2841,30 +2841,50 @@ def show_login():
 
 def show_ativos_dvr():
     import streamlit as st
-    from streamlit_pdf_viewer import pdf_viewer  # Puxando a ferramenta nova!
-    
+    import io
+    import os
+    from pypdf import PdfReader, PdfWriter
+    from streamlit_pdf_viewer import pdf_viewer
+
     st.title("📹 Controle de Ativos - DVRs")
     st.subheader("Manutenção Preventiva CFTV - 2026")
 
     nome_arquivo_pdf = "dvr_2026.pdf" 
 
-    try:
-        # Aqui acontece a mágica: a biblioteca exibe o PDF nativamente
-        pdf_viewer(nome_arquivo_pdf, width=1400, height=855)
+    if os.path.exists(nome_arquivo_pdf):
+        try:
+            # 1. Lê e rotaciona o PDF original na memória
+            reader = PdfReader(nome_arquivo_pdf)
+            writer = PdfWriter()
+            page = reader.pages[0]
+            page.rotate(90) # Se ficar de cabeça para baixo, mude para 90
+            writer.add_page(page)
 
-        # E mantemos o botão de download logo abaixo!
-        with open(nome_arquivo_pdf, "rb") as arquivo_pdf:
-            pdf_bytes = arquivo_pdf.read()
+            # 2. Salva o resultado rotacionado
+            pdf_out = io.BytesIO()
+            writer.write(pdf_out)
+            pdf_bytes = pdf_out.getvalue()
 
-        st.write("---")
-        st.download_button(
-            label="📄 Baixar Cópia em PDF",
-            data=pdf_bytes,
-            file_name="Manutencao_CFTV_2026.pdf",
-            mime="application/pdf"
-        )
-        
-    except FileNotFoundError:
+            # 3. Exibe usando o visualizador oficial (seguro contra bloqueios do navegador)
+            pdf_viewer(
+                input=pdf_bytes, 
+                width=1000, 
+                height=650, 
+                render_text=False
+            )
+
+            # 4. Botão de download (entrega o PDF já corrigido na horizontal)
+            st.write("---")
+            st.download_button(
+                label="📄 Baixar Cópia em PDF",
+                data=pdf_bytes,
+                file_name="Manutencao_CFTV_2026.pdf",
+                mime="application/pdf"
+            )
+
+        except Exception as e:
+            st.error(f"Erro ao processar o PDF: {e}")
+    else:
         st.error(f"❌ Arquivo '{nome_arquivo_pdf}' não encontrado na pasta!")
 
 
