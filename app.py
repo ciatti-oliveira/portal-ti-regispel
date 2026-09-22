@@ -3222,36 +3222,29 @@ def show_emprestimos():
         dados_hist = db.fetch_data("SELECT id, usuario, item, modelo, service_tag, patrimonio, lacre, acessorios, data_retirada, data_devolucao FROM emprestimos WHERE status = 'DEVOLVIDO' ORDER BY id DESC")
         
         if dados_hist:
-            # 1. Desempacota os dados do banco para dicionários puros (mata o erro na raiz)
-            registros = [dict(linha) for linha in dados_hist]
-            df_hist = pd.DataFrame(registros)
+            dados_limpos = []
             
-            # 2. Preenche qualquer buraco/vazio no banco de dados com texto em branco
-            df_hist = df_hist.fillna("")
+            # 1. Constrói uma nova lista já com os nomes finais e tudo forçado a texto limpo
+            for linha in dados_hist:
+                item_dit = dict(linha)
+                dados_limpos.append({
+                    'Colaborador': str(item_dit.get('usuario', '')).replace('None', ''),
+                    'Item': str(item_dit.get('item', '')).replace('None', ''),
+                    'Modelo': str(item_dit.get('modelo', '')).replace('None', ''),
+                    'Service Tag': str(item_dit.get('service_tag', '')).replace('None', ''),
+                    'Patrimônio': str(item_dit.get('patrimonio', '')).replace('None', ''),
+                    'Lacre': str(item_dit.get('lacre', '')).replace('None', ''),
+                    'Acessórios': str(item_dit.get('acessorios', '')).replace('None', ''),
+                    'Retirada': str(item_dit.get('data_retirada', '')).replace('None', ''),
+                    'Devolução': str(item_dit.get('data_devolucao', '')).replace('None', ''),
+                    'Status': '✅ Devolvido'
+                })
             
-            # 3. Força tudo a ser texto limpo
-            df_hist = df_hist.astype(str)
+            # 2. Cria o DataFrame Pandas a partir dos dados já 100% perfeitos
+            df_hist = pd.DataFrame(dados_limpos)
             
-            # 4. Renomeia as colunas
-            df_hist = df_hist.rename(columns={
-                'usuario': 'Colaborador',
-                'item': 'Item',
-                'modelo': 'Modelo',
-                'service_tag': 'Service Tag',
-                'patrimonio': 'Patrimônio',
-                'lacre': 'Lacre',
-                'acessorios': 'Acessórios',
-                'data_retirada': 'Retirada',
-                'data_devolucao': 'Devolução'
-            })
-            
-            df_hist['Status'] = "✅ Devolvido"
-            
-            # 5. Filtra e exibe
-            colunas_finais = ['Colaborador', 'Item', 'Modelo', 'Service Tag', 'Patrimônio', 'Lacre', 'Acessórios', 'Retirada', 'Devolução', 'Status']
-            colunas_exibir = [col for col in colunas_finais if col in df_hist.columns]
-            
-            st.dataframe(df_hist[colunas_exibir], hide_index=True, width="stretch")
+            # 3. Exibe a tabela (agora sem possibilidade de colunas ocultas ou tipos mistos)
+            st.dataframe(df_hist, hide_index=True, width="stretch")
         else:
             st.info("Nenhuma devolução registrada no histórico.")
 
