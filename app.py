@@ -2844,7 +2844,7 @@ def show_ativos_dvr():
     import io
     import os
     from pypdf import PdfReader, PdfWriter
-    import pypdfium2 as pdfium
+    from streamlit_pdf_viewer import pdf_viewer
 
     st.title("📹 Controle de Ativos - DVRs")
     st.subheader("Manutenção Preventiva CFTV - 2026")
@@ -2853,41 +2853,37 @@ def show_ativos_dvr():
 
     if os.path.exists(nome_arquivo_pdf):
         try:
-            # 1. ROTAÇÃO PARA A TELA (Qualidade HD)
-            # Carrega o PDF e extrai a primeira página
-            pdf_doc = pdfium.PdfDocument(nome_arquivo_pdf)
-            page_img = pdf_doc[0]
-            
-            # O parâmetro scale=3 garante uma resolução altíssima (HD)
-            # rotation=90 deita a imagem. Se ficar de ponta-cabeça, mude para 270.
-            image_hd = page_img.render(scale=3, rotation=90).to_pil()
-
-            # Exibe a imagem perfeita no lugar do visualizador bloqueado pelo Chrome
-            st.image(image_hd, use_container_width=True)
-
-
-            # 2. ROTAÇÃO PARA O DOWNLOAD (Mantendo o ficheiro original em PDF)
+            # 1. Lê e rotaciona o PDF original na memória
             reader = PdfReader(nome_arquivo_pdf)
             writer = PdfWriter()
-            page_pdf = reader.pages[0]
-            page_pdf.rotate(90) 
-            writer.add_page(page_pdf)
+            page = reader.pages[0]
+            page.rotate(90) # Se ficar de cabeça para baixo, mude para 90
+            writer.add_page(page)
 
+            # 2. Salva o resultado rotacionado
             pdf_out = io.BytesIO()
             writer.write(pdf_out)
             pdf_bytes = pdf_out.getvalue()
 
-            # 3. Botão de download
+            # 3. Exibe usando o visualizador oficial (seguro contra bloqueios do navegador)
+            pdf_viewer(
+                input=pdf_bytes, 
+                width=1000, 
+                height=650, 
+                render_text=False
+            )
+
+            # 4. Botão de download (entrega o PDF já corrigido na horizontal)
             st.write("---")
             st.download_button(
-                label="📄 Baixar Cópia em Alta Resolução",
+                label="📄 Baixar Cópia em PDF",
                 data=pdf_bytes,
                 file_name="Manutencao_CFTV_2026.pdf",
                 mime="application/pdf"
             )
 
         except Exception as e:
-            st.error(f"Erro ao processar o arquivo: {e}")
+            st.error(f"Erro ao processar o PDF: {e}")
     else:
         st.error(f"❌ Arquivo '{nome_arquivo_pdf}' não encontrado na pasta!")
 
@@ -3223,11 +3219,34 @@ def show_emprestimos():
 
     st.markdown("---")
     with st.expander("🗄️ Histórico de Devoluções"):
-        dados_hist = db.fetch_data("SELECT id, usuario as Colaborador, item as Item, modelo as Modelo, service_tag as 'Service Tag', patrimonio as Patrimônio, lacre as Lacre, acessorios as Acessórios, data_retirada as Retirada, data_devolucao as Devolução FROM emprestimos WHERE status = 'DEVOLVIDO' ORDER BY id DESC")
+        # 1. Puxa as colunas com os nomes originais do banco de dados
+        dados_hist = db.fetch_data("SELECT id, usuario, item, modelo, service_tag, patrimonio, lacre, acessorios, data_retirada, data_devolucao FROM emprestimos WHERE status = 'DEVOLVIDO' ORDER BY id DESC")
+        
         if dados_hist:
             df_hist = pd.DataFrame(dados_hist)
+            
+            # 2. Renomeia as colunas de forma limpa, substituindo as originais
+            df_hist = df_hist.rename(columns={
+                'usuario': 'Colaborador',
+                'item': 'Item',
+                'modelo': 'Modelo',
+                'service_tag': 'Service Tag',
+                'patrimonio': 'Patrimônio',
+                'lacre': 'Lacre',
+                'acessorios': 'Acessórios',
+                'data_retirada': 'Retirada',
+                'data_devolucao': 'Devolução'
+            })
+            
             df_hist['Status'] = "✅ Devolvido"
-            st.dataframe(df_hist.drop(columns=['id']), hide_index=True, width="stretch")
+            
+            # 3. Define a ordem exata e garante que NENHUMA coluna extra/duplicada passa
+            colunas_finais = ['Colaborador', 'Item', 'Modelo', 'Service Tag', 'Patrimônio', 'Lacre', 'Acessórios', 'Retirada', 'Devolução', 'Status']
+            
+            # Aplica o filtro de segurança ignorando o ID
+            colunas_exibir = [col for col in colunas_finais if col in df_hist.columns]
+            
+            st.dataframe(df_hist[colunas_exibir], hide_index=True, width="stretch")
         else:
             st.info("Nenhuma devolução registrada no histórico.")
 
