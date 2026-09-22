@@ -3218,13 +3218,12 @@ def show_emprestimos():
                                             st.error(f"Erro ao enviar: {res}")
 
     st.markdown("---")
-    with st.expander("🗄️ Histórico de Devoluções"):
+    with st.expander("🗄️ Histórico Detalhado de Devoluções"):
         dados_hist = db.fetch_data("SELECT id, usuario, item, modelo, service_tag, patrimonio, lacre, acessorios, data_retirada, data_devolucao FROM emprestimos WHERE status = 'DEVOLVIDO' ORDER BY id DESC")
         
         if dados_hist:
+            # 1. Prepara os dados limpos
             dados_limpos = []
-            
-            # 1. Constrói uma nova lista já com os nomes finais e tudo forçado a texto limpo
             for linha in dados_hist:
                 item_dit = dict(linha)
                 dados_limpos.append({
@@ -3233,21 +3232,113 @@ def show_emprestimos():
                     'Modelo': str(item_dit.get('modelo', '')).replace('None', ''),
                     'Service Tag': str(item_dit.get('service_tag', '')).replace('None', ''),
                     'Patrimônio': str(item_dit.get('patrimonio', '')).replace('None', ''),
-                    'Lacre': str(item_dit.get('lacre', '')).replace('None', ''),
-                    'Acessórios': str(item_dit.get('acessorios', '')).replace('None', ''),
-                    'Retirada': str(item_dit.get('data_retirada', '')).replace('None', ''),
-                    'Devolução': str(item_dit.get('data_devolucao', '')).replace('None', ''),
-                    'Status': '✅ Devolvido'
+                    'Devolução': str(item_dit.get('data_devolucao', '')).replace('None', '')
                 })
             
-            # 2. Cria o DataFrame Pandas a partir dos dados já 100% perfeitos
             df_hist = pd.DataFrame(dados_limpos)
             
-            # 3. Exibe a tabela (agora sem possibilidade de colunas ocultas ou tipos mistos)
-            st.dataframe(df_hist, hide_index=True, width="stretch")
+            # 2. Extrai Mês e Ano para os Filtros
+            df_hist['Data_Obj'] = pd.to_datetime(df_hist['Devolução'], format='%d/%m/%Y', errors='coerce')
+            df_hist['Ano'] = df_hist['Data_Obj'].dt.year.fillna(0).astype(int).astype(str).replace('0', 'N/A')
+            
+            meses_pt = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
+            df_hist['Mês'] = df_hist['Data_Obj'].dt.month.fillna(0).astype(int).map(meses_pt).fillna('N/A')
+
+            # ==========================================
+            # KPIs (RESUMO GERAL)
+            # ==========================================
+            st.markdown("##### 📈 Resumo Geral de Devoluções")
+            
+            total_devolucoes = len(df_hist)
+            if total_devolucoes > 0:
+                item_top = df_hist['Item'].value_counts().index[0]
+                qtd_item_top = df_hist['Item'].value_counts().iloc[0]
+                colab_top = df_hist['Colaborador'].value_counts().index[0]
+                qtd_colab_top = df_hist['Colaborador'].value_counts().iloc[0]
+            else:
+                item_top, qtd_item_top, colab_top, qtd_colab_top = "-", 0, "-", 0
+
+            kpi_html = f"""
+            <div style="display: flex; gap: 15px; margin-bottom: 30px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 200px; background-color: #ffffff; border-left: 5px solid #0284c7; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                    <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-bottom: 5px;">📦 Total Devolvido</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #0f172a;">{total_devolucoes}</div>
+                    <div style="font-size: 11px; color: #10b981; background-color: #d1fae5; padding: 3px 8px; border-radius: 10px; display: inline-block; margin-top: 8px; font-weight: bold;">registros no total</div>
+                </div>
+                <div style="flex: 1; min-width: 200px; background-color: #ffffff; border-left: 5px solid #0284c7; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                    <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-bottom: 5px;">🔝 Equipamento Mais Emprestado</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{item_top}</div>
+                    <div style="font-size: 11px; color: #10b981; background-color: #d1fae5; padding: 3px 8px; border-radius: 10px; display: inline-block; margin-top: 8px; font-weight: bold;">↑ {qtd_item_top} un.</div>
+                </div>
+                <div style="flex: 1; min-width: 200px; background-color: #ffffff; border-left: 5px solid #0284c7; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                    <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-bottom: 5px;">🏢 Colaborador Mais Frequente</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{colab_top}</div>
+                    <div style="font-size: 11px; color: #10b981; background-color: #d1fae5; padding: 3px 8px; border-radius: 10px; display: inline-block; margin-top: 8px; font-weight: bold;">↑ {qtd_colab_top} itens</div>
+                </div>
+            </div>
+            """
+            st.markdown(kpi_html, unsafe_allow_html=True)
+
+            # ==========================================
+            # FILTROS
+            # ==========================================
+            col_f1, col_f2 = st.columns(2)
+            
+            anos_disp = ["Todos"] + sorted([a for a in df_hist['Ano'].unique() if a != 'N/A'], reverse=True)
+            with col_f1:
+                filtro_ano = st.selectbox("Filtrar por Ano:", anos_disp)
+                
+            meses_disp = ["Todos"] + [m for m in df_hist['Mês'].unique() if m != 'N/A']
+            with col_f2:
+                filtro_mes = st.selectbox("Filtrar por Mês:", meses_disp)
+
+            # Aplica os filtros
+            df_filtrado = df_hist.copy()
+            if filtro_ano != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['Ano'] == filtro_ano]
+            if filtro_mes != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['Mês'] == filtro_mes]
+
+            # ==========================================
+            # LISTA DINÂMICA (CARTÕES HTML)
+            # ==========================================
+            st.write("") 
+            
+            if df_filtrado.empty:
+                st.warning("Nenhuma devolução encontrada para este filtro.")
+            else:
+                html_lista = ""
+                for _, row in df_filtrado.iterrows():
+                    extra_info = ""
+                    if row['Modelo'] or row['Service Tag']:
+                        extra_info = f"<span style='color: #64748b; font-size: 12px;'> | {row['Modelo']} | Tag: {row['Service Tag']}</span>"
+                    
+                    html_lista += f"""
+                    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #0284c7; border-radius: 6px; padding: 15px 20px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                        <div style="display: flex; align-items: center; gap: 30px;">
+                            <div style="color: #64748b; font-size: 13px; font-weight: 500; min-width: 130px;">
+                                🕒 {row['Devolução']}
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <div style="font-size: 15px; font-weight: bold; color: #1e293b;">
+                                    👤 {row['Colaborador']}
+                                </div>
+                                <div style="font-size: 14px; color: #475569;">
+                                    📦 {row['Item']} {extra_info}
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <span style="background-color: #e0f2fe; color: #0284c7; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold;">✅ Devolvido</span>
+                        </div>
+                    </div>
+                    """
+                st.markdown(html_lista, unsafe_allow_html=True)
+                
         else:
             st.info("Nenhuma devolução registrada no histórico.")
 
+    # A PARTE DE EXCLUIR REGISTRO CONTINUA AQUI INTACTA:
     if not somente_leitura:
         with st.expander("🗑️ Excluir Registro (Modo Administrador)"):
             perfil = st.session_state.get('perfil_acesso', '')
