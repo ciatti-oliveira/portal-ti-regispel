@@ -2844,7 +2844,7 @@ def show_ativos_dvr():
     import io
     import os
     from pypdf import PdfReader, PdfWriter
-    from streamlit_pdf_viewer import pdf_viewer
+    import pypdfium2 as pdfium
 
     st.title("📹 Controle de Ativos - DVRs")
     st.subheader("Manutenção Preventiva CFTV - 2026")
@@ -2853,37 +2853,41 @@ def show_ativos_dvr():
 
     if os.path.exists(nome_arquivo_pdf):
         try:
-            # 1. Lê e rotaciona o PDF original na memória
+            # 1. ROTAÇÃO PARA A TELA (Qualidade HD)
+            # Carrega o PDF e extrai a primeira página
+            pdf_doc = pdfium.PdfDocument(nome_arquivo_pdf)
+            page_img = pdf_doc[0]
+            
+            # O parâmetro scale=3 garante uma resolução altíssima (HD)
+            # rotation=90 deita a imagem. Se ficar de ponta-cabeça, mude para 270.
+            image_hd = page_img.render(scale=3, rotation=90).to_pil()
+
+            # Exibe a imagem perfeita no lugar do visualizador bloqueado pelo Chrome
+            st.image(image_hd, use_container_width=True)
+
+
+            # 2. ROTAÇÃO PARA O DOWNLOAD (Mantendo o ficheiro original em PDF)
             reader = PdfReader(nome_arquivo_pdf)
             writer = PdfWriter()
-            page = reader.pages[0]
-            page.rotate(90) # Se ficar de cabeça para baixo, mude para 90
-            writer.add_page(page)
+            page_pdf = reader.pages[0]
+            page_pdf.rotate(90) 
+            writer.add_page(page_pdf)
 
-            # 2. Salva o resultado rotacionado
             pdf_out = io.BytesIO()
             writer.write(pdf_out)
             pdf_bytes = pdf_out.getvalue()
 
-            # 3. Exibe usando o visualizador oficial (seguro contra bloqueios do navegador)
-            pdf_viewer(
-                input=pdf_bytes, 
-                width=1000, 
-                height=650, 
-                render_text=False
-            )
-
-            # 4. Botão de download (entrega o PDF já corrigido na horizontal)
+            # 3. Botão de download
             st.write("---")
             st.download_button(
-                label="📄 Baixar Cópia em PDF",
+                label="📄 Baixar Cópia em Alta Resolução",
                 data=pdf_bytes,
                 file_name="Manutencao_CFTV_2026.pdf",
                 mime="application/pdf"
             )
 
         except Exception as e:
-            st.error(f"Erro ao processar o PDF: {e}")
+            st.error(f"Erro ao processar o arquivo: {e}")
     else:
         st.error(f"❌ Arquivo '{nome_arquivo_pdf}' não encontrado na pasta!")
 
