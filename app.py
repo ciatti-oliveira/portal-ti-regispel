@@ -3219,13 +3219,18 @@ def show_emprestimos():
 
     st.markdown("---")
     with st.expander("🗄️ Histórico de Devoluções"):
-        # 1. Puxa as colunas com os nomes originais do banco de dados
         dados_hist = db.fetch_data("SELECT id, usuario, item, modelo, service_tag, patrimonio, lacre, acessorios, data_retirada, data_devolucao FROM emprestimos WHERE status = 'DEVOLVIDO' ORDER BY id DESC")
         
         if dados_hist:
             df_hist = pd.DataFrame(dados_hist)
             
-            # 2. Renomeia as colunas de forma limpa, substituindo as originais
+            # 1. BLINDAGEM: Transforma toda a tabela em texto para evitar o erro do PyArrow
+            df_hist = df_hist.astype(str)
+            
+            # 2. Limpa os valores vazios que ficaram como a palavra "None" ou "nan"
+            df_hist = df_hist.replace({'None': '', 'nan': '', '<NA>': ''})
+            
+            # 3. Renomeia as colunas
             df_hist = df_hist.rename(columns={
                 'usuario': 'Colaborador',
                 'item': 'Item',
@@ -3240,10 +3245,8 @@ def show_emprestimos():
             
             df_hist['Status'] = "✅ Devolvido"
             
-            # 3. Define a ordem exata e garante que NENHUMA coluna extra/duplicada passa
+            # 4. Filtra e exibe
             colunas_finais = ['Colaborador', 'Item', 'Modelo', 'Service Tag', 'Patrimônio', 'Lacre', 'Acessórios', 'Retirada', 'Devolução', 'Status']
-            
-            # Aplica o filtro de segurança ignorando o ID
             colunas_exibir = [col for col in colunas_finais if col in df_hist.columns]
             
             st.dataframe(df_hist[colunas_exibir], hide_index=True, width="stretch")
