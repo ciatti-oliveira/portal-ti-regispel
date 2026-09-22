@@ -3222,15 +3222,17 @@ def show_emprestimos():
         dados_hist = db.fetch_data("SELECT id, usuario, item, modelo, service_tag, patrimonio, lacre, acessorios, data_retirada, data_devolucao FROM emprestimos WHERE status = 'DEVOLVIDO' ORDER BY id DESC")
         
         if dados_hist:
-            df_hist = pd.DataFrame(dados_hist)
+            # 1. Desempacota os dados do banco para dicionários puros (mata o erro na raiz)
+            registros = [dict(linha) for linha in dados_hist]
+            df_hist = pd.DataFrame(registros)
             
-            # 1. BLINDAGEM: Transforma toda a tabela em texto para evitar o erro do PyArrow
+            # 2. Preenche qualquer buraco/vazio no banco de dados com texto em branco
+            df_hist = df_hist.fillna("")
+            
+            # 3. Força tudo a ser texto limpo
             df_hist = df_hist.astype(str)
             
-            # 2. Limpa os valores vazios que ficaram como a palavra "None" ou "nan"
-            df_hist = df_hist.replace({'None': '', 'nan': '', '<NA>': ''})
-            
-            # 3. Renomeia as colunas
+            # 4. Renomeia as colunas
             df_hist = df_hist.rename(columns={
                 'usuario': 'Colaborador',
                 'item': 'Item',
@@ -3245,7 +3247,7 @@ def show_emprestimos():
             
             df_hist['Status'] = "✅ Devolvido"
             
-            # 4. Filtra e exibe
+            # 5. Filtra e exibe
             colunas_finais = ['Colaborador', 'Item', 'Modelo', 'Service Tag', 'Patrimônio', 'Lacre', 'Acessórios', 'Retirada', 'Devolução', 'Status']
             colunas_exibir = [col for col in colunas_finais if col in df_hist.columns]
             
