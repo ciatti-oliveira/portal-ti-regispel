@@ -1312,6 +1312,9 @@ def show_cadastros():
 # ==========================================
 
 def show_dashboard_ativos():
+    import plotly.express as px
+    import pandas as pd
+    
     st.title("📊 Dashboard de Ativos")
     st.markdown("---")
 
@@ -1336,7 +1339,7 @@ def show_dashboard_ativos():
     setores_unicos = df[col_setor].nunique()
     pcs_4gb = len(df[df[col_ram].str.contains('4', na=False)]) 
 
-    # Cards Superiores (Mantidos iguais, pois já estavam bons!)
+    # Cards Superiores
     kpi_html = f"""
     <div style="display: flex; gap: 20px; margin-bottom: 35px; flex-wrap: wrap;">
         <div style="flex: 1; background-color: #ffffff; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
@@ -1363,24 +1366,19 @@ def show_dashboard_ativos():
         st.markdown("##### 🏢 Máquinas por Setor")
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
         
-        # Prepara os dados para o Gráfico
         df_setores = df[col_setor].value_counts().reset_index()
         df_setores.columns = ['Setor', 'Quantidade']
-        
-        # Ordena para a maior barra ficar no topo do gráfico horizontal
         df_setores = df_setores.sort_values(by='Quantidade', ascending=True)
         
-        # Desenha o Gráfico Plotly
         fig = px.bar(
             df_setores,
             x='Quantidade',
             y='Setor',
             orientation='h',
             text='Quantidade',
-            color_discrete_sequence=["#005ea2"] # Azul corporativo da Regispel
+            color_discrete_sequence=["#005ea2"] 
         )
         
-        # Estilização Limpa
         fig.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
@@ -1391,27 +1389,19 @@ def show_dashboard_ativos():
             showlegend=False
         )
         fig.update_traces(textposition='outside', textfont_size=13, textfont_color="#334155")
-        
-        # Renderiza no Streamlit
         st.plotly_chart(fig, width="stretch")
         
-        # --- NOVO BLOCO: DETALHAMENTO POR SETOR ---
-        st.markdown("<br>", unsafe_allow_html=True) # Espaçamento
+        st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("##### 🔍 Detalhes das Máquinas")
         
-        # Cria um dropdown com os setores do gráfico
         lista_setores = df_setores.sort_values(by='Setor')['Setor'].tolist()
         setor_selecionado = st.selectbox("Selecione o setor para visualizar quem são os usuários:", lista_setores)
         
-        # Filtra o dataframe original baseado na escolha
         if setor_selecionado:
             df_detalhe = df[df[col_setor] == setor_selecionado].copy()
-            
-            # Seleciona só as colunas que importam para o detalhe
             df_detalhe = df_detalhe[[col_nome, col_cpu, col_ram]]
             df_detalhe.columns = ['Usuário/Máquina', 'Processador', 'Memória RAM']
             
-            # Substituído st.dataframe pela tabela HTML customizada
             html_detalhes = f"""
             <div style="overflow-x: auto; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                 <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px;">
@@ -1425,10 +1415,8 @@ def show_dashboard_ativos():
                     <tbody>
             """
             
-            # Usando enumerate para fazer o efeito zebrado linha a linha
             for i, (index, row) in enumerate(df_detalhe.iterrows()):
                 bg_color = "#ffffff" if i % 2 == 0 else "#f8fafc"
-                
                 html_detalhes += f"""
                         <tr style="background-color: {bg_color}; border-bottom: 1px solid #e2e8f0; color: #334155;">
                             <td style="padding: 12px 15px;">{row['Usuário/Máquina']}</td>
@@ -1448,12 +1436,10 @@ def show_dashboard_ativos():
         st.markdown("##### ⏱️ Últimos Cadastros")
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True) 
         
-        # Pega as últimas 6 linhas e inverte para o mais recente ficar no topo
         ultimos = df.tail(6)[[col_nome, col_setor, col_cpu]].copy()
         ultimos.columns = ['Usuário', 'Setor', 'Processador']
         ultimos = ultimos.iloc[::-1]
         
-        # HTML Tabela Zebrada com Cabeçalho Azul
         html_tabela = f"""
         <div style="overflow-x: auto; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px;">
@@ -1468,9 +1454,7 @@ def show_dashboard_ativos():
         """
         
         for index, row in enumerate(ultimos.itertuples()):
-            # Lógica para o fundo "Zebrado"
             bg_color = "#ffffff" if index % 2 == 0 else "#f8fafc"
-            
             html_tabela += f"""
                     <tr style="background-color: {bg_color}; border-bottom: 1px solid #e2e8f0; color: #334155;">
                         <td style="padding: 12px 15px;">{row.Usuário}</td>
@@ -1485,6 +1469,220 @@ def show_dashboard_ativos():
         </div>
         """
         st.markdown(html_tabela.replace("\n", ""), unsafe_allow_html=True)
+
+    # ==========================================
+    # NOVO BLOCO: VISÃO DE SISTEMAS OPERATIVOS (Donut + Cards)
+    # ==========================================
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("##### 🪟 Distribuição de Sistemas Operativos")
+    
+    # 1. Tentativa de encontrar automaticamente a coluna do SO no banco de dados
+    col_os = None
+    for col in df.columns:
+        if any(nome in col.lower() for nome in ['sistema', 'os', 'so', 'windows']):
+            col_os = col
+            break
+            
+    # Caso não ache uma coluna, criamos uma temporária para não quebrar a tela (você pode ajustar depois)
+    if col_os is None:
+        col_os = 'Sistema Operacional'
+        df[col_os] = 'Não Informado' 
+
+    # 2. Função inteligente para agrupar e padronizar os nomes do SO
+    def padroniza_os(val):
+        v = str(val).upper()
+        if '11' in v: return 'Windows 11'
+        if '10' in v: return 'Windows 10'
+        if 'MAC' in v or 'APPLE' in v or 'OSX' in v: return 'MAC'
+        if v == 'NAN' or v == '' or v == 'NONE': return 'Não Informado'
+        return 'Outros'
+
+    df['OS_Formatado'] = df[col_os].apply(padroniza_os)
+    
+# ==========================================
+# MÓDULO: DASHBOARD DE ATIVOS (PCs)
+# ==========================================
+
+def show_dashboard_ativos():
+    import plotly.express as px
+    import pandas as pd
+    import streamlit as st
+    
+    st.title("📊 Dashboard de Ativos")
+    st.markdown("---")
+
+    # 1. BUSCA E TRATAMENTO DE DADOS
+    query = "SELECT * FROM computadores"
+    dados = db.fetch_data(query)
+
+    if not dados:
+        st.info("Nenhuma máquina cadastrada ainda. Vá em 'Inventário de Máquinas' para começar.")
+        return
+
+    df = pd.DataFrame(dados)
+
+    # Identificação dinâmica de colunas
+    col_nome = 'usuario' if 'usuario' in df.columns else ('Funcionário' if 'Funcionário' in df.columns else df.columns[1])
+    col_setor = 'setor_id' if 'setor_id' in df.columns else ('Setor' if 'Setor' in df.columns else df.columns[4])
+    col_cpu = 'processador' if 'processador' in df.columns else ('Processador' if 'Processador' in df.columns else df.columns[5])
+    col_ram = 'memoria_ram' if 'memoria_ram' in df.columns else ('↑ RAM' if '↑ RAM' in df.columns else df.columns[6])
+
+    df[col_setor] = df[col_setor].fillna("NÃO DEFINIDO").replace(["None", "", "none"], "NÃO DEFINIDO").astype(str).str.strip().str.upper()
+    df[col_ram] = df[col_ram].fillna("").astype(str).str.upper()
+
+    total_pcs = len(df)
+    setores_unicos = df[col_setor].nunique()
+    pcs_4gb = len(df[df[col_ram].str.contains('4', na=False)]) 
+
+    # 2. CARDS SUPERIORES (KPIs)
+    kpi_html = f"""
+    <div style="display: flex; gap: 20px; margin-bottom: 35px; flex-wrap: wrap;">
+        <div style="flex: 1; background-color: #ffffff; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
+            <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Total de Computadores</div>
+            <div style="font-size: 36px; font-weight: 900; color: #1e293b; margin-top: 5px; line-height: 1;">💻 {total_pcs}</div>
+        </div>
+        <div style="flex: 1; background-color: #ffffff; border-left: 5px solid #10b981; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
+            <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Setores Atendidos</div>
+            <div style="font-size: 36px; font-weight: 900; color: #1e293b; margin-top: 5px; line-height: 1;">🏢 {setores_unicos}</div>
+        </div>
+        <div style="flex: 1; background-color: #fffbeb; border-left: 5px solid #f59e0b; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
+            <div style="font-size: 12px; color: #b45309; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Máquinas com 4GB RAM</div>
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 5px;">
+                <span style="font-size: 36px; font-weight: 900; color: #92400e; line-height: 1;">⚠️ {pcs_4gb}</span>
+                <span style="font-size: 10px; background: #fde68a; color: #92400e; padding: 4px 8px; border-radius: 12px; font-weight: bold;">Upgrade Recomendado</span>
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(kpi_html.replace("\n", ""), unsafe_allow_html=True)
+    
+    # 3. GRÁFICO PANORÂMICO: MÁQUINAS POR SETOR (DESTAQUE TOP 3)
+    st.markdown("##### 🏢 Máquinas por Setor (Destaque nos Principais)")
+    st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+    
+    df_setores = df[col_setor].value_counts().reset_index()
+    df_setores.columns = ['Setor', 'Quantidade']
+    df_setores = df_setores.sort_values(by='Quantidade', ascending=False)
+    
+    # Define cor destaque para o Top 3
+    df_setores['Cor'] = ['#005ea2' if i < 3 else '#93c5fd' for i in range(len(df_setores))]
+    
+    fig = px.bar(
+        df_setores,
+        x='Setor',
+        y='Quantidade',
+        text='Quantidade',
+        color='Cor',
+        color_discrete_map='identity'
+    )
+    
+    fig.update_traces(
+        textposition='outside',
+        textfont=dict(size=12, color="#1e293b", weight="bold"),
+        marker=dict(cornerradius=6)
+    )
+    
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(showgrid=False, title="", tickangle=-45, tickfont=dict(size=11, color="#334155")),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="", showticklabels=False),
+        margin=dict(l=0, r=0, t=25, b=0),
+        height=480,
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 4. VISÃO DE SISTEMAS OPERATIVOS (DONUT + CARDS)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("##### 🪟 Distribuição de Sistemas Operativos")
+    
+    col_os = None
+    for col in df.columns:
+        if any(nome in col.lower() for nome in ['sistema', 'os', 'so', 'windows']):
+            col_os = col
+            break
+            
+    if col_os is None:
+        col_os = 'Sistema Operacional'
+        df[col_os] = 'Não Informado' 
+
+    def padroniza_os(val):
+        v = str(val).upper()
+        if '11' in v: return 'Windows 11'
+        if '10' in v: return 'Windows 10'
+        if 'MAC' in v or 'APPLE' in v or 'OSX' in v: return 'MAC'
+        if v == 'NAN' or v == '' or v == 'NONE': return 'Não Informado'
+        return 'Outros'
+
+    df['OS_Formatado'] = df[col_os].apply(padroniza_os)
+    
+    col_donut, col_cards = st.columns([1, 1.5])
+    
+    with col_donut:
+        df_os_counts = df['OS_Formatado'].value_counts().reset_index()
+        df_os_counts.columns = ['Sistema', 'Quantidade']
+        
+        fig_os = px.pie(
+            df_os_counts, 
+            values='Quantidade', 
+            names='Sistema', 
+            hole=0.6,
+            color='Sistema',
+            color_discrete_map={
+                'Windows 11': '#6366f1',
+                'Windows 10': '#14b8a6',
+                'MAC': '#475569',
+                'Outros': '#cbd5e1',
+                'Não Informado': '#e2e8f0'
+            }
+        )
+        fig_os.update_traces(
+            textposition='inside', 
+            textinfo='percent', 
+            hoverinfo='label+percent', 
+            textfont_size=14, 
+            textfont_color="white", 
+            marker=dict(line=dict(color='#ffffff', width=2))
+        )
+        fig_os.update_layout(
+            margin=dict(t=20, b=20, l=20, r=20), 
+            height=280, 
+            showlegend=False,
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            annotations=[dict(text='<b>Sistemas</b>', x=0.5, y=0.5, font_size=16, showarrow=False, font_color="#64748b")]
+        )
+        st.plotly_chart(fig_os, use_container_width=True)
+        
+    with col_cards:
+        qtd_w11 = len(df[df['OS_Formatado'] == 'Windows 11'])
+        qtd_w10 = len(df[df['OS_Formatado'] == 'Windows 10'])
+        qtd_mac = len(df[df['OS_Formatado'] == 'MAC'])
+        
+        cards_os_html = f"""
+        <div style="display: flex; gap: 15px; margin-top: 35px; flex-wrap: wrap;">
+            <div style="flex: 1; background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; padding: 20px; text-align: center; min-width: 120px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div style="font-size: 28px; margin-bottom: 8px;">🪟</div>
+                <div style="font-size: 11px; color: #4f46e5; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Windows 11</div>
+                <div style="font-size: 32px; font-weight: 900; color: #3730a3; margin-top: 5px;">{qtd_w11}</div>
+            </div>
+            <div style="flex: 1; background-color: #f0fdfa; border: 1px solid #5eead4; border-radius: 8px; padding: 20px; text-align: center; min-width: 120px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div style="font-size: 28px; margin-bottom: 8px;">🟦</div>
+                <div style="font-size: 11px; color: #0d9488; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Windows 10</div>
+                <div style="font-size: 32px; font-weight: 900; color: #115e59; margin-top: 5px;">{qtd_w10}</div>
+            </div>
+            <div style="flex: 1; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; text-align: center; min-width: 120px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div style="font-size: 28px; margin-bottom: 8px;">🍏</div>
+                <div style="font-size: 11px; color: #475569; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">MacOS / Apple</div>
+                <div style="font-size: 32px; font-weight: 900; color: #1e293b; margin-top: 5px;">{qtd_mac}</div>
+            </div>
+        </div>
+        """
+        st.markdown(cards_os_html.replace("\n", ""), unsafe_allow_html=True)
 
 
 # --- FUNÇÃO DO POPUP ATUALIZADA (COM N EQUIP) ---
@@ -2029,7 +2227,7 @@ def show_notebook_regispel():
             pass
 
     # ==========================================
-    # 2. OPÇÕES DE CADASTRO, IMPORTAÇÃO E EDIÇÃO
+    # 2. OPÇÕES DE CADASTRO, IMPORTAÇÃO, EDIÇÃO E EXCLUSÃO
     # ==========================================
     if not somente_leitura:
         
@@ -2215,30 +2413,37 @@ def show_notebook_regispel():
                             st.error("❌ Os campos Usuário e Modelo são obrigatórios.")
             else:
                 st.info("Nenhum notebook cadastrado para editar.")
-
-        # ==========================================
-        # EXCLUIR NOTEBOOK (Apenas Administrador)
-        # ==========================================
-        perfil = st.session_state.get('perfil_acesso', '').upper()
-        if "ADMINISTRADOR" in perfil:
-            with st.expander("🗑️ Excluir Registro (Modo Administrador)"):
-                if laptops_existentes:
-                    laptop_sel_del_nome = st.selectbox("Selecione o Notebook para apagar:", list(opcoes_laptops.keys()), key="sel_exclusao")
-                    laptop_sel_del = opcoes_laptops[laptop_sel_del_nome]
-                    
-                    st.warning("⚠️ **Atenção:** A exclusão removerá o equipamento permanentemente do banco de dados.")
-                    
-                    col_del1, col_del2 = st.columns([3, 1])
-                    with col_del1:
-                        confirmar_del = st.checkbox(f"🚨 Confirmo que desejo apagar o notebook de **{laptop_sel_del['responsavel']}**.")
-                    with col_del2:
-                        if st.button("🔴 EXCLUIR REGISTRO", use_container_width=True, disabled=not confirmar_del):
-                            db.execute_query("DELETE FROM laptops WHERE id=?", (laptop_sel_del['id'],))
-                            st.success("🗑️ Registro apagado!")
-                            st.rerun()
-                else:
-                    st.info("Nenhum notebook disponível para exclusão.")
-
+        # """
+        # # ==========================================
+        # # EXCLUIR COMPUTADOR DO SISTEMA (Acesso Livre)
+        # # ==========================================
+        
+        # with st.expander("🗑️ Excluir Computador do Sistema"):
+        #     laptops_para_excluir = db.fetch_data("SELECT * FROM laptops ORDER BY responsavel")
+            
+        #     if laptops_para_excluir:
+        #         # Montando a visualização exata da sua foto: [ATENDIMENTO-03] - Cassia (COMERCIAL)
+        #         opcoes_del_laptops = {
+        #             f"[{lap.get('nome_pc', 'SEM-NOME')}] — {lap['responsavel']} ({lap.get('localizacao', 'SEM SETOR')})": lap 
+        #             for lap in laptops_para_excluir
+        #         }
+                
+        #         st.markdown("Selecione a máquina que deseja deletar do sistema:")
+        #         laptop_sel_del_nome = st.selectbox("Ocultar Label", list(opcoes_del_laptops.keys()), key="sel_exclusao", label_visibility="collapsed")
+        #         laptop_sel_del = opcoes_del_laptops[laptop_sel_del_nome]
+                
+        #         st.warning(f"⚠️ **Atenção:** Você está prestes a excluir permanentemente o cadastro de **{laptop_sel_del['responsavel']}**.")
+                
+        #         confirmar_del = st.checkbox("Confirmo que desejo apagar este computador permanentemente do Portal.")
+                
+        #         if st.button("🔴 APAGAR CADASTRO", use_container_width=True, disabled=not confirmar_del):
+        #             db.execute_query("DELETE FROM laptops WHERE id=?", (laptop_sel_del['id'],))
+        #             st.success("🗑️ Registro apagado com sucesso!")
+        #             st.rerun()
+        #     else:
+        #         st.info("Nenhum notebook disponível para exclusão.")
+        #     """
+        
     st.markdown("---")
     
     # ==========================================
@@ -2307,62 +2512,55 @@ def show_notebook_regispel():
                     else:
                         status_bg, status_border, status_label, status_val_color = "#f5f6fa", "#dcdde1", "#7f8fa6", "#2d3436"
 
-                    obs_html = f"<div style='margin-bottom: 12px; color: #d63031; font-size: 11px; font-weight: 700;'>⚠️ Obs: {obs}</div>" if obs else ""
+                    # Obs com o estilo mais limpo e margem ajustada
+                    obs_html = f"<div style='margin-bottom: 8px; color: #ef4444; font-size: 11px; font-weight: 700;'>⚠️ Obs: {obs}</div>" if obs else ""
 
-                    html_card = f"""<div style="border: 1px solid #e0e0e0; border-top: 4px solid #025da6; border-radius: 8px; padding: 15px; background-color: white; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); height: 100%;">
-<!-- Cabeçalho idêntico -->
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-    <span style="font-size: 9px; font-weight: 800; color: #7f8c8d; letter-spacing: 0.5px; text-transform: uppercase;">{dept}</span>
-    <span style="background-color: #e3f2fd; color: #025da6; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 700;">💻 {nome_pc}</span>
-</div>
+                    html_card = f"""
+                    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); box-sizing: border-box; border-top: 4px solid #005b9f; height: 100%;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <div style="font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">{dept}</div>
+                            <div style="font-size: 11px; font-weight: bold; color: #005b9f; background: #eaf4fc; padding: 2px 6px; border-radius: 4px; border: 1px solid #bce0fd;">💻 {nome_pc}</div>
+                        </div>
+                        
+                        <div style="font-size: 18px; font-weight: 800; color: #1e293b; margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{resp}</div>
+                        
+                        <div style="background: #f8fafc; padding: 4px 10px; border-radius: 4px; margin-bottom: 10px; border: 1px solid #f1f5f9; font-size: 12px; font-weight: 700; color: #475569;">
+                            💻 {modelo} <span style="color: #cbd5e1;">|</span> 🏷️ Patrimônio: {patrimonio}
+                        </div>
 
-<!-- Título Usuário Maior -->
-<div style="margin: 0 0 12px 0; color: #2c3e50; font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-    {resp}
-</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                            <div style="background: #f8fafc; padding: 6px 10px; border-radius: 4px; border: 1px solid #f1f5f9;">
+                                <div style="font-size: 9px; color: #94a3b8; font-weight: bold;">SENHAS DO SISTEMA</div>
+                                <div style="font-size: 11px; font-weight: 700; color: #334155; line-height: 1.4;">
+                                    <span style="color: #64748b; font-weight: 500;">Sys:</span> {sys_pwd}<br>
+                                    <span style="color: #64748b; font-weight: 500;">BIOS:</span> {bios}
+                                </div>
+                            </div>
+                            <div style="background: #f8fafc; padding: 6px 10px; border-radius: 4px; border: 1px solid #f1f5f9;">
+                                <div style="font-size: 9px; color: #94a3b8; font-weight: bold;">CREDENCIAIS AD/LOCAL</div>
+                                <div style="font-size: 11px; font-weight: 700; color: #334155; line-height: 1.4;">
+                                    <span style="color: #64748b; font-weight: 500;">ADM:</span> {adm}<br>
+                                    <span style="color: #64748b; font-weight: 500;">KSC:</span> {ksc_user} / {ksc_pwd}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="background: {status_bg}; padding: 6px 10px; border-radius: 4px; margin-bottom: 8px; border: 1px solid {status_border};">
+                            <div style="font-size: 9px; color: {status_label}; font-weight: bold;">STATUS DO EQUIPAMENTO</div>
+                            <div style="font-size: 13px; font-weight: 700; color: {status_val_color};">{status}</div>
+                        </div>
 
-<!-- Faixa Cinza Equipamento -->
-<div style="background-color: #f8f9fa; padding: 10px 12px; border-radius: 5px; font-size: 11px; color: #2d3436; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-    💻 {modelo} <span style="color: #dfe6e9;">|</span> 🏷️ Patrimônio: {patrimonio}
-</div>
+                        {obs_html}
 
-<!-- Divisão de Credenciais estilo CPU/RAM -->
-<div style="display: flex; gap: 10px; margin-bottom: 10px;">
-    <div style="flex: 1; background-color: #f8f9fa; padding: 10px 12px; border-radius: 5px;">
-        <div style="font-size: 8px; color: #7f8c8d; font-weight: 800; text-transform: uppercase; margin-bottom: 4px;">SENHAS DO SISTEMA</div>
-        <div style="font-size: 11px; color: #2d3436; font-weight: 700; line-height: 1.4;">
-            <span style="color: #636e72; font-weight: 500;">Sys:</span> {sys_pwd}<br>
-            <span style="color: #636e72; font-weight: 500;">BIOS:</span> {bios}
-        </div>
-    </div>
-    <div style="flex: 1; background-color: #f8f9fa; padding: 10px 12px; border-radius: 5px;">
-        <div style="font-size: 8px; color: #7f8c8d; font-weight: 800; text-transform: uppercase; margin-bottom: 4px;">CREDENCIAIS AD/LOCAL</div>
-        <div style="font-size: 11px; color: #2d3436; font-weight: 700; line-height: 1.4;">
-            <span style="color: #636e72; font-weight: 500;">ADM:</span> {adm}<br>
-            <span style="color: #636e72; font-weight: 500;">KSC:</span> {ksc_user} / {ksc_pwd}
-        </div>
-    </div>
-</div>
-
-<!-- Status estilo caixa de Armazenamento -->
-<div style="background-color: {status_bg}; border: 1px solid {status_border}; padding: 10px 12px; border-radius: 5px; margin-bottom: 15px;">
-    <div style="font-size: 8px; color: {status_label}; font-weight: 800; text-transform: uppercase; margin-bottom: 4px;">STATUS DO EQUIPAMENTO</div>
-    <div style="font-size: 12px; color: {status_val_color}; font-weight: 800;">
-        {status}
-    </div>
-</div>
-
-{obs_html}
-
-<!-- Rodapé cinza pequeno -->
-<div style="display: flex; justify-content: space-between; font-size: 10px; color: #b2bec3; font-weight: 600;">
-    <span>🔒 Lacre: {patrimonio}</span>
-    <span style="font-style: italic;">💬 Service Tag - {tag}</span>
-</div>
-</div>"""
+                        <div style="font-size: 11px; color: #64748b; border-top: 1px solid #f1f5f9; padding-top: 8px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px;">
+                            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;">🔒 Lacre: {patrimonio}</span>
+                            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; font-style: italic;">💬 Tag: {tag}</span>
+                        </div>
+                    </div>
+                    """
                     
                     with coluna_atual:
-                        st.markdown(html_card, unsafe_allow_html=True)
+                        st.markdown(html_card.replace("\n", ""), unsafe_allow_html=True)
     else:
         st.info("Nenhum notebook cadastrado no inventário ainda.")
 # ==========================================
