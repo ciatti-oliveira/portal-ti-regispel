@@ -813,9 +813,15 @@ def show_estoque_de_suprimentos():
                             (item_id, nova_qtd_calculada, obs_final)
                         )
                         
+                        # ---> FIX DO FUSO HORÁRIO AQUI <---
+                        from datetime import datetime
+                        import pytz
+                        fuso_br = pytz.timezone('America/Sao_Paulo')
+                        data_hora_atual = datetime.now(fuso_br).strftime('%Y-%m-%d %H:%M:%S')
+
                         db.execute_query(
-                            "INSERT INTO historico_saidas (item, quantidade, departamento) VALUES (?, ?, ?)",
-                            (item_selecionado, qtd_mov, departamento)
+                            "INSERT INTO historico_saidas (item, quantidade, departamento, data_saida) VALUES (?, ?, ?, ?)",
+                            (item_selecionado, qtd_mov, departamento, data_hora_atual)
                         )
                         st.success(f"✅ Saída de {qtd_mov} un. para {departamento} registrada! Estoque atualizado para {nova_qtd_calculada}.")
                         
@@ -911,35 +917,95 @@ def show_estoque_de_suprimentos():
     st.markdown(html_toners.replace("\n", " "), unsafe_allow_html=True)
 
     st.markdown("---") 
-# ==========================================
-    # 📈 MINI DASHBOARD DE CONSUMO
+
     # ==========================================
-    st.markdown("#### 📈 Resumo Geral de Saídas")
+    # 📈 DASHBOARD INTERATIVO DE CONSUMO
+    # ==========================================
+    st.markdown("#### 📈 Resumo Geral e Histórico de Saídas")
     
     # 0. Truque: Força a criação da coluna de data no banco, caso ela não exista
     try:
         db.execute_query("ALTER TABLE historico_saidas ADD COLUMN data_saida TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
     except:
-        pass # Se a coluna já existir, ele ignora o erro e segue em frente
+        pass 
     
-    # 1. Busca o histórico de saídas puxando a nova coluna "data_saida"
+    # 1. Busca o histórico de saídas
     query_hist = "SELECT data_saida, departamento, item, quantidade FROM historico_saidas ORDER BY data_saida DESC"
     dados_hist = db.fetch_data(query_hist)
     
     if dados_hist:
         df_hist = pd.DataFrame(dados_hist)
         
-        # 2. Cálculo dos 3 Indicadores Principais
-        total_consumido = df_hist['quantidade'].sum()
-        
-        df_itens = df_hist.groupby('item')['quantidade'].sum().reset_index().sort_values(by='quantidade', ascending=False)
-        item_campeao = df_itens.iloc[0]['item']
-        qtd_item_campeao = df_itens.iloc[0]['quantidade']
-        
-        df_setores = df_hist.groupby('departamento')['quantidade'].sum().reset_index().sort_values(by='quantidade', ascending=False)
-        setor_campeao = df_setores.iloc[0]['departamento']
-        qtd_setor_campeao = df_setores.iloc[0]['quantidade']
-        
+        # ---> NOVO: PREPARAMOS OS DADOS E FILTROS PRIMEIRO <---
+        if 'data_saida' in df_hist.columns:
+            df_hist['data_saida_dt'] = pd.to_datetime(df_hist['data_saida'], errors='coerce')
+            df_hist['Mes'] = df_hist['data_saida_dt'].dt.month
+            df_hist['Ano'] = df_hist['data_saida_dt'].dt.year
+            
+            meses_map = {
+                1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 
+                5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 
+                9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
+            }
+            
+            # Filtros Globais (no topo)
+            st.markdown("##### 🔍 Filtros de Pesquisa", unsafe_allow_html=True)
+            col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+            
+            lista_anos = ["Todos"] + sorted(df_hist['Ano'].dropna().unique().astype(int).astype(str).tolist(), reverse=True)
+            ano_selecionado = col_f1.selectbox("Filtrar por Ano:", lista_anos)
+            
+            meses_existentes = sorted(df_hist['Mes'].dropna().unique().astype(int).tolist())
+            lista_meses = ["Todos"] + [meses_map[m] for m in meses_existentes]
+            mes_selecionado = col_f2.selectbox("Filtrar por Mês:", lista_meses)
+
+            lista_produtos = ["Todos"] + sorted(df_hist['item'].astype(str).dropna().unique().tolist())
+            produto_selecionado = col_f3.selectbox("Filtrar por Produto:", lista_produtos)
+
+            lista_departamentos = ["Todos"] + sorted(df_hist['departamento'].astype(str).dropna().unique().tolist())
+            departamento_selecionado = col_f4.selectbox("Filtrar por Setor:", lista_departamentos)
+            
+            # Aplica os filtros escolhidos pelo usuário
+            df_filtrado = df_hist.copy()
+            if ano_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['Ano'] == int(ano_selecionado)]
+            
+            if mes_selecionado != "Todos":
+                mes_num = [k for k, v in meses_map.items() if v == mes_selecionado][0]
+                df_filtrado = df_filtrado[df_filtrado['Mes'] == mes_num]
+                
+            if produto_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['item'] == produto_selecionado]
+                
+            if departamento_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['departamento'] == departamento_selecionado]
+            
+            df_filtrado['data_exibicao'] = df_filtrado['data_saida_dt'].dt.strftime('%d/%m/%Y %H:%M').fillna("-")
+            st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
+
+        else:
+            df_filtrado = df_hist.copy()
+            df_filtrado['data_exibicao'] = "-"
+
+        # 2. Cálculo dos 3 Indicadores Principais (AGORA BASEADOS NOS FILTROS)
+        if not df_filtrado.empty:
+            total_consumido = df_filtrado['quantidade'].sum()
+            
+            df_itens = df_filtrado.groupby('item')['quantidade'].sum().reset_index().sort_values(by='quantidade', ascending=False)
+            item_campeao = df_itens.iloc[0]['item']
+            qtd_item_campeao = df_itens.iloc[0]['quantidade']
+            
+            df_setores = df_filtrado.groupby('departamento')['quantidade'].sum().reset_index().sort_values(by='quantidade', ascending=False)
+            setor_campeao = df_setores.iloc[0]['departamento']
+            qtd_setor_campeao = df_setores.iloc[0]['quantidade']
+        else:
+            # Valores zerados caso a pesquisa não retorne nada
+            total_consumido = 0
+            item_campeao = "Nenhum"
+            qtd_item_campeao = 0
+            setor_campeao = "Nenhum"
+            qtd_setor_campeao = 0
+
         # 3. Renderiza os cartões de métrica estilizados (Cards HTML)
         html_cards = f"""
         <style>
@@ -1008,60 +1074,17 @@ def show_estoque_de_suprimentos():
         """
         st.markdown(html_cards.replace('\n', ''), unsafe_allow_html=True)
         
-       # 4. Histórico Detalhado com Filtros de Pesquisa
-        st.markdown("<br>**📋 Histórico Detalhado de Saídas:**", unsafe_allow_html=True)
-        
-        # Garante que a data está no formato correto para extrair mês e ano
-        if 'data_saida' in df_hist.columns:
-            df_hist['data_saida_dt'] = pd.to_datetime(df_hist['data_saida'], errors='coerce')
-            
-            # Cria colunas ocultas para os filtros
-            df_hist['Mes'] = df_hist['data_saida_dt'].dt.month
-            df_hist['Ano'] = df_hist['data_saida_dt'].dt.year
-            
-            # Mapeia os meses para português
-            meses_map = {
-                1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 
-                5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 
-                9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
-            }
-            
-            # Monta o layout dos filtros lado a lado
-            col_f1, col_f2 = st.columns(2)
-            
-            # Filtro de Ano (busca apenas os anos que existem no banco)
-            lista_anos = ["Todos"] + sorted(df_hist['Ano'].dropna().unique().astype(int).astype(str).tolist(), reverse=True)
-            ano_selecionado = col_f1.selectbox("Filtrar por Ano:", lista_anos)
-            
-            # Filtro de Mês (busca apenas os meses que existem no banco)
-            meses_existentes = sorted(df_hist['Mes'].dropna().unique().astype(int).tolist())
-            lista_meses = ["Todos"] + [meses_map[m] for m in meses_existentes]
-            mes_selecionado = col_f2.selectbox("Filtrar por Mês:", lista_meses)
-            
-            # Aplica os filtros escolhidos pelo usuário
-            df_filtrado = df_hist.copy()
-            if ano_selecionado != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['Ano'] == int(ano_selecionado)]
-            
-            if mes_selecionado != "Todos":
-                mes_num = [k for k, v in meses_map.items() if v == mes_selecionado][0]
-                df_filtrado = df_filtrado[df_filtrado['Mes'] == mes_num]
-            
-            # Formata a data final para exibição na tela
-            df_filtrado['data_exibicao'] = df_filtrado['data_saida_dt'].dt.strftime('%d/%m/%Y %H:%M').fillna("-")
-        else:
-            df_filtrado = df_hist.copy()
-            df_filtrado['data_exibicao'] = "-"
+        # 4. Histórico Detalhado (Já filtrado)
+        st.markdown("<br>**📋 Histórico Detalhado:**", unsafe_allow_html=True)
 
-        # Verifica se sobrou algum dado após o filtro
         if df_filtrado.empty:
-            st.warning("Nenhuma saída encontrada para o período selecionado.")
+            st.warning("Nenhuma saída encontrada para os filtros selecionados.")
         else:
-            # Monta a estrutura HTML dos cartões (AGORA MAIORES)
+            # Monta a estrutura HTML dos cartões da lista
             html_lista = """
             <style>
                 .hist-container {
-                    max-height: 500px; /* Aumentei a altura máxima para caber os cards maiores */
+                    max-height: 500px;
                     overflow-y: auto;
                     padding-right: 8px;
                     margin-top: 15px;
@@ -1076,9 +1099,9 @@ def show_estoque_de_suprimentos():
                 .hist-card {
                     background-color: #ffffff;
                     border: 1px solid #e2e8f0;
-                    border-left: 5px solid #005ea2; /* Azul Regispel um pouco mais espesso */
+                    border-left: 5px solid #005ea2;
                     border-radius: 8px;
-                    padding: 22px 25px; /* PADINGS MAIORES PARA DAR VOLUME */
+                    padding: 22px 25px;
                     margin-bottom: 15px;
                     display: flex;
                     justify-content: space-between;
@@ -1090,7 +1113,7 @@ def show_estoque_de_suprimentos():
                     background-color: #f8fafc;
                 }
                 .hist-date {
-                    font-size: 13px; /* FONTE MAIOR */
+                    font-size: 13px;
                     color: #64748b;
                     font-weight: 600;
                     display: flex;
@@ -1102,21 +1125,21 @@ def show_estoque_de_suprimentos():
                     margin-left: 20px;
                 }
                 .hist-dept {
-                    font-size: 16px; /* FONTE MAIOR */
+                    font-size: 16px;
                     color: #0f172a;
                     font-weight: 700;
                 }
                 .hist-item-name {
-                    font-size: 14px; /* FONTE MAIOR */
+                    font-size: 14px;
                     color: #475569;
                     margin-top: 5px;
                 }
                 .hist-badge {
                     background-color: #e0f2fe;
                     color: #0369a1;
-                    font-size: 15px; /* FONTE MAIOR */
+                    font-size: 15px;
                     font-weight: 700;
-                    padding: 8px 18px; /* BOTÃO MAIOR */
+                    padding: 8px 18px;
                     border-radius: 6px;
                     text-align: center;
                     min-width: 100px;
@@ -1126,7 +1149,6 @@ def show_estoque_de_suprimentos():
             """
             
             for _, row in df_filtrado.iterrows():
-                # Lógica para singular e plural
                 qtd = int(row['quantidade'])
                 texto_unidade = "unidade" if qtd == 1 else "unidades"
                 
@@ -1146,11 +1168,7 @@ def show_estoque_de_suprimentos():
                 """
                 
             html_lista += "</div>"
-            
             st.markdown(html_lista.replace('\n', ''), unsafe_allow_html=True)
-    def show_importacao():
-        st.title("📥 Importação de Dados")
-        st.write("Aba de importação automática reservada para uso futuro.")
 
 def show_cadastros():
     st.title("⚙️ Cadastros Base")
