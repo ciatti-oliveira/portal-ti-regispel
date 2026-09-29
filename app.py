@@ -728,16 +728,28 @@ def enviar_alerta_suprimentos_novo():
         st.error(f"❌ Falha ao conectar no provedor de E-mail: {str(e)}")
 
 def show_estoque_de_suprimentos():
+    import pandas as pd
+    import streamlit as st
+    from datetime import datetime
+    import pytz
+
     st.title("💧 Estoque de Suprimentos")
     st.markdown("Atualizar estoque de determinado modelo de impressora, cor e toner enviando um relatório de alerta para o e-mail")
     
     somente_leitura = "Visitante" in st.session_state.get('perfil_acesso', '')
 
-    # Cria a coluna nova no banco de dados para guardar o texto da sua planilha
+    # Cria as colunas novas no banco de dados para evitar erros
     try:
         db.execute_query("ALTER TABLE estoque_suprimentos ADD COLUMN obs_solicitacao TEXT DEFAULT ''")
-    except:
-        pass
+    except: pass
+    
+    try:
+        db.execute_query("ALTER TABLE historico_saidas ADD COLUMN data_saida TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    except: pass
+    
+    try:
+        db.execute_query("ALTER TABLE historico_saidas ADD COLUMN observacao TEXT DEFAULT ''")
+    except: pass
 
     if not somente_leitura:
         if st.button("📧 Enviar Relatório de Alertas por E-mail", width="stretch"):
@@ -756,15 +768,19 @@ def show_estoque_de_suprimentos():
     df_sup['cor_tipo'] = df_sup['cor_tipo'].astype(str).str.strip().str.upper()
 
     if not somente_leitura:
-        with st.expander("🔄 Movimentação de Estoque (Saída ou Ajuste)"):
+        with st.expander("🔄 Movimentação de Estoque e Compras"):
             
-            # 1. Ação escolhida
-            acao = st.radio("O que você deseja registrar?", ["📉 Registrar Saída (Consumo)", "✏️ Ajustar Estoque (Correção/Compra)"], horizontal=True)
+            # 1. TRÊS Ações separadas para não dar confusão
+            acao = st.radio("O que você deseja fazer?", 
+                            ["📉 Registrar Saída (Consumo)", 
+                             "✏️ Ajustar Contagem (Estoque)", 
+                             "🛒 Status de Compras (Aviso Azul)"], 
+                            horizontal=True)
             
             with st.form("form_estoque", clear_on_submit=True):
                 opcoes_itens = {f"{row['categoria']} - {row['cor_tipo']}": row['id'] for _, row in df_sup.iterrows()}
                 
-                # 2. Se for SAÍDA
+                # --- TELA 1: SAÍDA ---
                 if acao == "📉 Registrar Saída (Consumo)":
                     col_f1, col_f2, col_f3 = st.columns([2, 1, 1.5])
                     with col_f1:
@@ -772,68 +788,79 @@ def show_estoque_de_suprimentos():
                     with col_f2:
                         qtd_mov = st.number_input("Qtd Retirada", min_value=1, step=1)
                     with col_f3:
-                        departamento = st.selectbox("Departamento Destino", ["Qualidade", "Almoxarifado", "Expedição", "Produção", "RH/DP", "PCP", "Comercial", "Diretoria", "Líderes de Produção", "Compras", "Marketing", ])
+                        departamento = st.selectbox("Departamento Destino", ["Qualidade", "Almoxarifado", "Expedição", "Produção", "RH/DP", "PCP", "Comercial", "Diretoria", "Líderes de Produção", "Compras", "Marketing"])
                         
-                    obs_pedido = st.text_input("Anotação opcional (Ex: Entregue para o João)")
-                    limpar_nota = False 
+                    obs_pedido = st.text_input("Anotação (Ex: Entregue para o João) - Vai apenas para o histórico")
                     
-                # 3. Se for AJUSTE
-                else:
-                    col_f1, col_f2, col_f3 = st.columns([2, 1, 1.5])
+                # --- TELA 2: AJUSTE DE ESTOQUE ---
+                elif acao == "✏️ Ajustar Contagem (Estoque)":
+                    col_f1, col_f2 = st.columns([2, 1])
                     with col_f1:
                         item_selecionado = st.selectbox("Selecione o Item", list(opcoes_itens.keys()))
                     with col_f2:
-                        qtd_mov = st.number_input("Nova Quantidade Total", min_value=0, step=1)
-                    with col_f3:
-                        obs_pedido = st.text_input("Anotação (Ex: Solicitado 8 unid.)")
-                        limpar_nota = st.checkbox("🧹 Limpar anotação existente")
+                        qtd_mov = st.number_input("Nova Quantidade Real no Armário", min_value=0, step=1)
+                        
+                # --- TELA 3: AVISO DE COMPRAS (AZUL) ---
+                else:
+                    col_f1, col_f2 = st.columns([2, 1])
+                    with col_f1:
+                        item_selecionado = st.selectbox("Selecione o Item", list(opcoes_itens.keys()))
+                    with col_f2:
+                        acao_compra = st.selectbox("O que fazer?", ["Adicionar Aviso (Fica Azul)", "Limpar Aviso (Tira o Azul)"])
+                    
+                    # REMOVIDO o bloqueio do campo. Agora nunca mais trava!
+                    obs_compra = st.text_input("Motivo da Compra (Ex: Solicitado 5 unid.)")
                 
                 if st.form_submit_button("Salvar Movimentação"):
                     item_id = opcoes_itens[item_selecionado]
-                    obs_final = obs_pedido.strip()
                     
-                    if limpar_nota:
-                        obs_final = ""
-                    elif not obs_final:
-                        obs_atual_db = db.fetch_data("SELECT obs_solicitacao FROM estoque_suprimentos WHERE suprimento_id = ?", (item_id,))
-                        if obs_atual_db and obs_atual_db[0]['obs_solicitacao']:
-                            obs_final = obs_atual_db[0]['obs_solicitacao']
+                    # Pega os dados atuais para preservar
+                    linha_item = df_sup[df_sup['id'] == item_id]
+                    estoque_atual = int(linha_item['quantidade'].values[0]) if not linha_item.empty else 0
+                    obs_atual_db = linha_item['obs_solicitacao'].values[0] if not linha_item.empty else ""
                     
-                    # 4. SALVANDO NO BANCO
                     if acao == "📉 Registrar Saída (Consumo)":
-                        linha_item = df_sup[df_sup['id'] == item_id]
-                        estoque_atual = int(linha_item['quantidade'].values[0]) if not linha_item.empty else 0
-                        nova_qtd_calculada = estoque_atual - qtd_mov
+                        nova_qtd_calculada = max(0, estoque_atual - qtd_mov)
                         
-                        if nova_qtd_calculada < 0: 
-                            nova_qtd_calculada = 0
-                            
+                        # Atualiza quantidade, mas preserva a anotação azul se houver
                         db.execute_query(
-                            "INSERT INTO estoque_suprimentos (suprimento_id, quantidade, obs_solicitacao) VALUES (?, ?, ?) ON CONFLICT(suprimento_id) DO UPDATE SET quantidade=excluded.quantidade, obs_solicitacao=excluded.obs_solicitacao", 
-                            (item_id, nova_qtd_calculada, obs_final)
+                            "INSERT INTO estoque_suprimentos (suprimento_id, quantidade, obs_solicitacao) VALUES (?, ?, ?) ON CONFLICT(suprimento_id) DO UPDATE SET quantidade=excluded.quantidade", 
+                            (item_id, nova_qtd_calculada, obs_atual_db)
                         )
                         
-                        # ---> FIX DO FUSO HORÁRIO AQUI <---
-                        from datetime import datetime
-                        import pytz
                         fuso_br = pytz.timezone('America/Sao_Paulo')
                         data_hora_atual = datetime.now(fuso_br).strftime('%Y-%m-%d %H:%M:%S')
 
                         db.execute_query(
-                            "INSERT INTO historico_saidas (item, quantidade, departamento, data_saida) VALUES (?, ?, ?, ?)",
-                            (item_selecionado, qtd_mov, departamento, data_hora_atual)
+                            "INSERT INTO historico_saidas (item, quantidade, departamento, data_saida, observacao) VALUES (?, ?, ?, ?, ?)",
+                            (item_selecionado, qtd_mov, departamento, data_hora_atual, obs_pedido.strip())
                         )
                         st.success(f"✅ Saída de {qtd_mov} un. para {departamento} registrada! Estoque atualizado para {nova_qtd_calculada}.")
                         
-                    else:
+                    elif acao == "✏️ Ajustar Contagem (Estoque)":
                         db.execute_query(
-                            "INSERT INTO estoque_suprimentos (suprimento_id, quantidade, obs_solicitacao) VALUES (?, ?, ?) ON CONFLICT(suprimento_id) DO UPDATE SET quantidade=excluded.quantidade, obs_solicitacao=excluded.obs_solicitacao", 
-                            (item_id, qtd_mov, obs_final)
+                            "INSERT INTO estoque_suprimentos (suprimento_id, quantidade, obs_solicitacao) VALUES (?, ?, ?) ON CONFLICT(suprimento_id) DO UPDATE SET quantidade=excluded.quantidade", 
+                            (item_id, qtd_mov, obs_atual_db)
                         )
-                        st.success("✅ Estoque ajustado com sucesso!")
+                        st.success("✅ Quantidade no estoque ajustada com sucesso!")
+                        
+                    else: # Se for Compras
+                        if acao_compra == "Adicionar Aviso (Fica Azul)":
+                            nova_obs = obs_compra.strip()
+                            db.execute_query(
+                                "INSERT INTO estoque_suprimentos (suprimento_id, quantidade, obs_solicitacao) VALUES (?, ?, ?) ON CONFLICT(suprimento_id) DO UPDATE SET obs_solicitacao=excluded.obs_solicitacao", 
+                                (item_id, estoque_atual, nova_obs)
+                            )
+                        else:
+                            # Apaga o texto azul de forma forçada e direta no banco de dados
+                            db.execute_query(
+                                "UPDATE estoque_suprimentos SET obs_solicitacao = '' WHERE suprimento_id = ?", 
+                                (item_id,)
+                            )
+                        st.success("✅ Status de compras atualizado!")
                         
                     st.rerun()
-                    
+
     st.markdown("---")
 
     # ==========================================
@@ -923,20 +950,13 @@ def show_estoque_de_suprimentos():
     # ==========================================
     st.markdown("#### 📈 Resumo Geral e Histórico de Saídas")
     
-    # 0. Truque: Força a criação da coluna de data no banco, caso ela não exista
-    try:
-        db.execute_query("ALTER TABLE historico_saidas ADD COLUMN data_saida TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-    except:
-        pass 
-    
-    # 1. Busca o histórico de saídas
-    query_hist = "SELECT data_saida, departamento, item, quantidade FROM historico_saidas ORDER BY data_saida DESC"
+    # Busca o histórico de saídas agora trazendo a nova coluna observacao
+    query_hist = "SELECT data_saida, departamento, item, quantidade, COALESCE(observacao, '') as observacao FROM historico_saidas ORDER BY data_saida DESC"
     dados_hist = db.fetch_data(query_hist)
     
     if dados_hist:
         df_hist = pd.DataFrame(dados_hist)
         
-        # ---> NOVO: PREPARAMOS OS DADOS E FILTROS PRIMEIRO <---
         if 'data_saida' in df_hist.columns:
             df_hist['data_saida_dt'] = pd.to_datetime(df_hist['data_saida'], errors='coerce')
             df_hist['Mes'] = df_hist['data_saida_dt'].dt.month
@@ -948,7 +968,6 @@ def show_estoque_de_suprimentos():
                 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
             }
             
-            # Filtros Globais (no topo)
             st.markdown("##### 🔍 Filtros de Pesquisa", unsafe_allow_html=True)
             col_f1, col_f2, col_f3, col_f4 = st.columns(4)
             
@@ -965,7 +984,6 @@ def show_estoque_de_suprimentos():
             lista_departamentos = ["Todos"] + sorted(df_hist['departamento'].astype(str).dropna().unique().tolist())
             departamento_selecionado = col_f4.selectbox("Filtrar por Setor:", lista_departamentos)
             
-            # Aplica os filtros escolhidos pelo usuário
             df_filtrado = df_hist.copy()
             if ano_selecionado != "Todos":
                 df_filtrado = df_filtrado[df_filtrado['Ano'] == int(ano_selecionado)]
@@ -986,8 +1004,10 @@ def show_estoque_de_suprimentos():
         else:
             df_filtrado = df_hist.copy()
             df_filtrado['data_exibicao'] = "-"
+            if 'observacao' not in df_filtrado.columns:
+                df_filtrado['observacao'] = ""
 
-        # 2. Cálculo dos 3 Indicadores Principais (AGORA BASEADOS NOS FILTROS)
+        # Cálculo dos 3 Indicadores Principais
         if not df_filtrado.empty:
             total_consumido = df_filtrado['quantidade'].sum()
             
@@ -999,14 +1019,12 @@ def show_estoque_de_suprimentos():
             setor_campeao = df_setores.iloc[0]['departamento']
             qtd_setor_campeao = df_setores.iloc[0]['quantidade']
         else:
-            # Valores zerados caso a pesquisa não retorne nada
             total_consumido = 0
             item_campeao = "Nenhum"
             qtd_item_campeao = 0
             setor_campeao = "Nenhum"
             qtd_setor_campeao = 0
 
-        # 3. Renderiza os cartões de métrica estilizados (Cards HTML)
         html_cards = f"""
         <style>
             .kpi-container {{
@@ -1017,7 +1035,7 @@ def show_estoque_de_suprimentos():
             }}
             .kpi-card {{
                 background-color: #ffffff;
-                border-left: 5px solid #005ea2; /* Azul Regispel */
+                border-left: 5px solid #005ea2;
                 border-radius: 6px;
                 padding: 20px;
                 box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -1074,13 +1092,11 @@ def show_estoque_de_suprimentos():
         """
         st.markdown(html_cards.replace('\n', ''), unsafe_allow_html=True)
         
-        # 4. Histórico Detalhado (Já filtrado)
         st.markdown("<br>**📋 Histórico Detalhado:**", unsafe_allow_html=True)
 
         if df_filtrado.empty:
             st.warning("Nenhuma saída encontrada para os filtros selecionados.")
         else:
-            # Monta a estrutura HTML dos cartões da lista
             html_lista = """
             <style>
                 .hist-container {
@@ -1128,6 +1144,17 @@ def show_estoque_de_suprimentos():
                     font-size: 16px;
                     color: #0f172a;
                     font-weight: 700;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .hist-nota {
+                    font-size: 12px;
+                    color: #64748b;
+                    font-weight: 500;
+                    background: #f1f5f9;
+                    padding: 2px 8px;
+                    border-radius: 12px;
                 }
                 .hist-item-name {
                     font-size: 14px;
@@ -1152,13 +1179,16 @@ def show_estoque_de_suprimentos():
                 qtd = int(row['quantidade'])
                 texto_unidade = "unidade" if qtd == 1 else "unidades"
                 
+                # Se tiver anotação de quem retirou, exibe do lado do setor
+                nota_html = f"<span class='hist-nota'>📝 {row['observacao']}</span>" if pd.notna(row.get('observacao')) and str(row.get('observacao')).strip() != "" else ""
+                
                 html_lista += f"""
                 <div class="hist-card">
                     <div style="width: 140px;">
                         <div class="hist-date">🕒 {row['data_exibicao']}</div>
                     </div>
                     <div class="hist-info">
-                        <div class="hist-dept">🏢 {row['departamento']}</div>
+                        <div class="hist-dept">🏢 {row['departamento']} {nota_html}</div>
                         <div class="hist-item-name">📦 {row['item']}</div>
                     </div>
                     <div>
