@@ -730,7 +730,27 @@ def enviar_alerta_suprimentos_novo():
             
             <div style="background-color: #f1f5f9; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
                 <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Este relatório foi gerado e enviado automaticamente pelo sistema.</p>
-                <a href="https://ti-regispel.streamlit.app" style="display: inline-block; padding: 14px 28px;
+                <a href="https://ti-regispel.streamlit.app" style="display: inline-block; padding: 14px 28px; background-color: #0369a1; color: #ffffff; text-decoration: none; font-weight: bold; border-radius: 6px; letter-spacing: 0.5px;">Acessar Portal de T.I.</a>
+            </div>
+            
+        </div> <!-- Fim do container principal -->
+    </body>
+    </html>
+    """
+    
+    msg.attach(MIMEText(corpo_html, 'html', 'utf-8'))
+    
+    try:
+        smtp = smtplib.SMTP(server, int(porta))
+        smtp.starttls()
+        smtp.login(user, senha)
+        smtp.sendmail(user, lista_destinos, msg.as_string())
+        smtp.quit()
+        
+        st.success("📩 Report gerado e enviado com sucesso!")
+        
+    except Exception as e:
+        st.error(f"❌ Falha ao conectar no provedor de E-mail: {str(e)}")
 def show_estoque_de_suprimentos():
     import pandas as pd
     import streamlit as st
