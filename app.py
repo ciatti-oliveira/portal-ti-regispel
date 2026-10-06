@@ -513,6 +513,14 @@ def show_Cadastro_de_Impressoras():
 
 def enviar_alerta_suprimentos_novo():
     """Varre o banco de dados e envia um e-mail consolidado com alertas e solicitações."""
+    from dotenv import load_dotenv
+    import os
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from datetime import datetime, timedelta
+    import streamlit as st
+
     load_dotenv(override=True)
     
     server = os.getenv("EMAIL_HOST")
@@ -552,99 +560,103 @@ def enviar_alerta_suprimentos_novo():
     msg['To'] = ", ".join(lista_destinos)
     msg['Subject'] = "📊 [REPORT SEMANAL] Posição de Estoque de Suprimentos — Portal T.I."
     
+    # --- INÍCIO DO HTML COM CABEÇALHO CORPORATIVO ---
     corpo_html = """
     <html>
-    <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.5;">
-        <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Status Atual do Estoque de Suprimentos</h2>
-        <p>Abaixo está a fotografia atualizada dos suprimentos de impressão que exigem monitoramento.</p>
+    <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.5; background-color: #f8fafc; padding: 20px;">
+        <div style="max-width: 800px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            
+            <!-- CABEÇALHO -->
+            <div style="background-color: #0369a1; padding: 20px; text-align: center;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px;">PORTAL DE T.I. - REGISPEL</h1>
+                <p style="color: #bae6fd; margin: 5px 0 0 0; font-size: 14px;">Report Semanal de Suprimentos</p>
+            </div>
+            
+            <div style="padding: 30px;">
+                <h2 style="color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-top: 0;">Status Atual do Estoque</h2>
+                <p style="color: #475569;">Abaixo está a fotografia atualizada dos suprimentos de impressão que exigem monitoramento nesta semana.</p>
     """
     
     # --- TABELA 1: ALERTAS CRÍTICOS (0 ou 1) ---
     if itens_criticos:
         corpo_html += """
-        <h3 style="color: #b91c1c; margin-top: 25px;">🔴 AÇÃO URGENTE: Itens Críticos / Zerados</h3>
-        <table style="width:100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #fca5a5;">
-            <tr style="background-color: #fee2e2; border-bottom: 2px solid #ef4444;">
-                <th style="padding: 10px; text-align: left;">Modelo / Insumo</th>
-                <th style="padding: 10px; text-align: left;">Cor / Tipo</th>
-                <th style="padding: 10px; text-align: center; width: 100px;">Qtd Atual</th>
-            </tr>
+                <h3 style="color: #b91c1c; margin-top: 25px;">🔴 AÇÃO URGENTE: Itens Críticos / Zerados</h3>
+                <table style="width:100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #fca5a5; border-radius: 5px; overflow: hidden;">
+                    <tr style="background-color: #fee2e2; border-bottom: 2px solid #ef4444;">
+                        <th style="padding: 12px; text-align: left;">Modelo / Insumo</th>
+                        <th style="padding: 12px; text-align: left;">Cor / Tipo</th>
+                        <th style="padding: 12px; text-align: center; width: 100px;">Qtd Atual</th>
+                    </tr>
         """
         for item in itens_criticos:
             corpo_html += f"""
-            <tr style="border-bottom: 1px solid #fca5a5;">
-                <td style="padding: 10px; font-weight: bold;">{item['categoria']}</td>
-                <td style="padding: 10px;">{item['cor_tipo']}</td>
-                <td style="padding: 10px; text-align: center; color: #b91c1c; font-weight: bold; font-size: 16px;">{item['qtd']}</td>
-            </tr>
+                    <tr style="border-bottom: 1px solid #fca5a5;">
+                        <td style="padding: 12px; font-weight: bold;">{item['categoria']}</td>
+                        <td style="padding: 12px;">{item['cor_tipo']}</td>
+                        <td style="padding: 12px; text-align: center; color: #b91c1c; font-weight: bold; font-size: 16px;">{item['qtd']}</td>
+                    </tr>
             """
         corpo_html += "</table>"
 
     # --- TABELA 2: ATENÇÃO (2 unidades) ---
     if itens_atencao:
         corpo_html += """
-        <h3 style="color: #a16207; margin-top: 25px;">⚠️ ATENÇÃO: Chegando no Ponto de Pedido</h3>
-        <table style="width:100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #fde047;">
-            <tr style="background-color: #fef08a; border-bottom: 2px solid #eab308;">
-                <th style="padding: 10px; text-align: left;">Modelo / Insumo</th>
-                <th style="padding: 10px; text-align: left;">Cor / Tipo</th>
-                <th style="padding: 10px; text-align: center; width: 100px;">Qtd Atual</th>
-            </tr>
+                <h3 style="color: #b45309; margin-top: 25px;">⚠️ ATENÇÃO: Chegando no Ponto de Pedido</h3>
+                <table style="width:100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #fde047; border-radius: 5px; overflow: hidden;">
+                    <tr style="background-color: #fef08a; border-bottom: 2px solid #eab308;">
+                        <th style="padding: 12px; text-align: left;">Modelo / Insumo</th>
+                        <th style="padding: 12px; text-align: left;">Cor / Tipo</th>
+                        <th style="padding: 12px; text-align: center; width: 100px;">Qtd Atual</th>
+                    </tr>
         """
         for item in itens_atencao:
             corpo_html += f"""
-            <tr style="border-bottom: 1px solid #fde047;">
-                <td style="padding: 10px; font-weight: bold;">{item['categoria']}</td>
-                <td style="padding: 10px;">{item['cor_tipo']}</td>
-                <td style="padding: 10px; text-align: center; color: #a16207; font-weight: bold; font-size: 16px;">{item['qtd']}</td>
-            </tr>
+                    <tr style="border-bottom: 1px solid #fde047;">
+                        <td style="padding: 12px; font-weight: bold;">{item['categoria']}</td>
+                        <td style="padding: 12px;">{item['cor_tipo']}</td>
+                        <td style="padding: 12px; text-align: center; color: #b45309; font-weight: bold; font-size: 16px;">{item['qtd']}</td>
+                    </tr>
             """
         corpo_html += "</table>"
         
-    # --- TABELA 3: JÁ SOLICITADOS ---
+    # --- TABELA 3: JÁ SOLICITADOS (AZUL) ---
     if itens_comprados:
         corpo_html += """
-        <h3 style="color: #1d4ed8; margin-top: 35px;">🛒 AGUARDANDO CHEGADA: Pedidos Já Solicitados</h3>
-        <table style="width:100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #bfdbfe;">
-            <tr style="background-color: #eff6ff; border-bottom: 2px solid #3b82f6;">
-                <th style="padding: 10px; text-align: left;">Modelo / Insumo</th>
-                <th style="padding: 10px; text-align: left;">Cor / Tipo</th>
-                <th style="padding: 10px; text-align: center; width: 80px;">Qtd Atual</th>
-                <th style="padding: 10px; text-align: left;">Status do Pedido</th>
-            </tr>
+                <h3 style="color: #1d4ed8; margin-top: 35px;">🛒 AGUARDANDO CHEGADA: Pedidos Já Solicitados</h3>
+                <table style="width:100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #bfdbfe; border-radius: 5px; overflow: hidden;">
+                    <tr style="background-color: #eff6ff; border-bottom: 2px solid #3b82f6;">
+                        <th style="padding: 12px; text-align: left;">Modelo / Insumo</th>
+                        <th style="padding: 12px; text-align: left;">Cor / Tipo</th>
+                        <th style="padding: 12px; text-align: center; width: 80px;">Qtd Atual</th>
+                        <th style="padding: 12px; text-align: left;">Status do Pedido</th>
+                    </tr>
         """
         for item in itens_comprados:
             corpo_html += f"""
-            <tr style="border-bottom: 1px solid #bfdbfe;">
-                <td style="padding: 10px; font-weight: bold;">{item['categoria']}</td>
-                <td style="padding: 10px;">{item['cor_tipo']}</td>
-                <td style="padding: 10px; text-align: center; color: #1e3a8a; font-weight: bold; font-size: 16px;">{item['qtd']}</td>
-                <td style="padding: 10px; color: #3b82f6; font-style: italic;">{item['obs']}</td>
-            </tr>
+                    <tr style="border-bottom: 1px solid #bfdbfe;">
+                        <td style="padding: 12px; font-weight: bold;">{item['categoria']}</td>
+                        <td style="padding: 12px;">{item['cor_tipo']}</td>
+                        <td style="padding: 12px; text-align: center; color: #1e3a8a; font-weight: bold; font-size: 16px;">{item['qtd']}</td>
+                        <td style="padding: 12px; color: #3b82f6; font-style: italic;">{item['obs']}</td>
+                    </tr>
             """
         corpo_html += "</table>"
 
-    # --- TABELA 4: MINI DASHBOARD E CONSUMO DA SEMANA (ÚLTIMOS 7 DIAS) ---
-    from datetime import datetime, timedelta
-    
-    # 1. Calcula a data limite de 7 dias atrás
+    # --- TABELA 4: MINI DASHBOARD E CONSUMO DA SEMANA ---
     data_limite = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
     
     try:
-        # Consulta SQL usando a estrutura do seu projeto (db.fetch_data)
         query_semana = f"SELECT departamento, item, quantidade FROM historico_saidas WHERE data_saida >= '{data_limite}'"
         saidas_semana = db.fetch_data(query_semana)
     except Exception as e:
         saidas_semana = []
         
     if saidas_semana:
-        # LÓGICA PYTHON: Calculando os campeões da semana
         consumo_por_dpto = {}
         consumo_por_item = {}
         total_semana = 0
         
         for saida in saidas_semana:
-            # Garante leitura tanto por dicionário quanto por objeto
             qtd = int(saida.get('quantidade', 0) if isinstance(saida, dict) else getattr(saida, 'quantidade', 0))
             dpto = saida.get('departamento', '-') if isinstance(saida, dict) else getattr(saida, 'departamento', '-')
             item = saida.get('item', '-') if isinstance(saida, dict) else getattr(saida, 'item', '-')
@@ -659,38 +671,37 @@ def enviar_alerta_suprimentos_novo():
         top_item = max(consumo_por_item, key=consumo_por_item.get) if consumo_por_item else "-"
         top_item_qtd = consumo_por_item.get(top_item, 0)
 
-        # MONTANDO O HTML: Mini Dashboard + Tabela Detalhada
         corpo_html += f"""
-        <h3 style="color: #15803d; margin-top: 35px;">📦 MOVIMENTAÇÃO DA SEMANA (ÚLTIMOS 7 DIAS)</h3>
-        
-        <!-- CARDS DO DASHBOARD -->
-        <table style="width:100%; margin-bottom: 20px; border-collapse: separate; border-spacing: 10px 0;">
-            <tr>
-                <td style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; text-align: center; border-radius: 5px; width: 33%;">
-                    <span style="color: #166534; font-size: 12px; font-weight: bold; text-transform: uppercase;">Total Retirado</span><br>
-                    <span style="color: #15803d; font-size: 24px; font-weight: bold;">{total_semana}</span><br>
-                    <span style="color: #166534; font-size: 12px;">unidades</span>
-                </td>
-                <td style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; text-align: center; border-radius: 5px; width: 33%;">
-                    <span style="color: #1e3a8a; font-size: 12px; font-weight: bold; text-transform: uppercase;">Maior Consumidor</span><br>
-                    <span style="color: #1d4ed8; font-size: 16px; font-weight: bold;">{top_dpto}</span><br>
-                    <span style="color: #3b82f6; font-size: 12px;">({top_dpto_qtd} un.)</span>
-                </td>
-                <td style="background-color: #fffbeb; border: 1px solid #fde68a; padding: 15px; text-align: center; border-radius: 5px; width: 33%;">
-                    <span style="color: #92400e; font-size: 12px; font-weight: bold; text-transform: uppercase;">Item Mais Pedido</span><br>
-                    <span style="color: #d97706; font-size: 16px; font-weight: bold;">{top_item}</span><br>
-                    <span style="color: #f59e0b; font-size: 12px;">({top_item_qtd} un.)</span>
-                </td>
-            </tr>
-        </table>
+                <h3 style="color: #15803d; margin-top: 40px; border-top: 2px dashed #e2e8f0; padding-top: 30px;">📦 MOVIMENTAÇÃO DA SEMANA (ÚLTIMOS 7 DIAS)</h3>
+                
+                <!-- CARDS DO DASHBOARD -->
+                <table style="width:100%; margin-bottom: 20px; border-collapse: separate; border-spacing: 15px 0; margin-left: -15px; margin-right: -15px;">
+                    <tr>
+                        <td style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 20px 10px; text-align: center; border-radius: 8px; width: 33%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                            <span style="color: #166534; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Total Retirado</span><br>
+                            <span style="color: #15803d; font-size: 28px; font-weight: bold; display: block; margin: 8px 0;">{total_semana}</span>
+                            <span style="color: #166534; font-size: 12px;">unidades</span>
+                        </td>
+                        <td style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 20px 10px; text-align: center; border-radius: 8px; width: 33%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                            <span style="color: #1e3a8a; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Maior Consumidor</span><br>
+                            <span style="color: #1d4ed8; font-size: 18px; font-weight: bold; display: block; margin: 8px 0;">{top_dpto}</span>
+                            <span style="color: #3b82f6; font-size: 12px;">({top_dpto_qtd} un.)</span>
+                        </td>
+                        <td style="background-color: #fffbeb; border: 1px solid #fde68a; padding: 20px 10px; text-align: center; border-radius: 8px; width: 33%; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                            <span style="color: #92400e; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Item Mais Pedido</span><br>
+                            <span style="color: #d97706; font-size: 14px; font-weight: bold; display: block; margin: 8px 0; line-height: 1.2;">{top_item}</span>
+                            <span style="color: #f59e0b; font-size: 12px;">({top_item_qtd} un.)</span>
+                        </td>
+                    </tr>
+                </table>
 
-        <!-- TABELA DETALHADA -->
-        <table style="width:100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #bbf7d0;">
-            <tr style="background-color: #f0fdf4; border-bottom: 2px solid #22c55e;">
-                <th style="padding: 10px; text-align: left;">Departamento Destino</th>
-                <th style="padding: 10px; text-align: left;">Item / Modelo Consumido</th>
-                <th style="padding: 10px; text-align: center; width: 100px;">Qtd Entregue</th>
-            </tr>
+                <!-- TABELA DETALHADA -->
+                <table style="width:100%; border-collapse: collapse; margin-top: 15px; border: 1px solid #bbf7d0; border-radius: 5px; overflow: hidden;">
+                    <tr style="background-color: #f0fdf4; border-bottom: 2px solid #22c55e;">
+                        <th style="padding: 12px; text-align: left;">Departamento Destino</th>
+                        <th style="padding: 12px; text-align: left;">Item / Modelo Consumido</th>
+                        <th style="padding: 12px; text-align: center; width: 100px;">Qtd Entregue</th>
+                    </tr>
         """
         for saida in saidas_semana:
             dpto_val = saida.get('departamento', '-') if isinstance(saida, dict) else getattr(saida, 'departamento', '-')
@@ -698,35 +709,28 @@ def enviar_alerta_suprimentos_novo():
             qtd_val = saida.get('quantidade', 0) if isinstance(saida, dict) else getattr(saida, 'quantidade', 0)
             
             corpo_html += f"""
-            <tr style="border-bottom: 1px solid #bbf7d0;">
-                <td style="padding: 10px; font-weight: bold;">{dpto_val}</td>
-                <td style="padding: 10px;">{item_val}</td>
-                <td style="padding: 10px; text-align: center; color: #166534; font-weight: bold; font-size: 16px;">{qtd_val}</td>
-            </tr>
+                    <tr style="border-bottom: 1px solid #bbf7d0;">
+                        <td style="padding: 12px; font-weight: bold;">{dpto_val}</td>
+                        <td style="padding: 12px;">{item_val}</td>
+                        <td style="padding: 12px; text-align: center; color: #166534; font-weight: bold; font-size: 16px;">{qtd_val}</td>
+                    </tr>
             """
         corpo_html += "</table>"
     else:
         corpo_html += """
-        <h3 style="color: #15803d; margin-top: 35px;">📦 MOVIMENTAÇÃO DA SEMANA (ÚLTIMOS 7 DIAS)</h3>
-        <p style="color: #64748b; font-style: italic; border-left: 3px solid #cbd5e1; padding-left: 10px;">
-            Nenhuma saída de suprimento foi registrada nos últimos 7 dias.
-        </p>
+                <h3 style="color: #15803d; margin-top: 40px; border-top: 2px dashed #e2e8f0; padding-top: 30px;">📦 MOVIMENTAÇÃO DA SEMANA (ÚLTIMOS 7 DIAS)</h3>
+                <p style="color: #64748b; font-style: italic; background-color: #f1f5f9; padding: 15px; border-radius: 5px; text-align: center;">
+                    Nenhuma saída de suprimento foi registrada nos últimos 7 dias.
+                </p>
         """
     
-    msg.attach(MIMEText(corpo_html, 'html', 'utf-8'))
-    
-    try:
-        smtp = smtplib.SMTP(server, int(porta))
-        smtp.starttls()
-        smtp.login(user, senha)
-        smtp.sendmail(user, lista_destinos, msg.as_string())
-        smtp.quit()
-        
-        st.success("📩 Report gerado e enviado com sucesso!")
-        
-    except Exception as e:
-        st.error(f"❌ Falha ao conectar no provedor de E-mail: {str(e)}")
-
+    # --- RODAPÉ CORPORATIVO COM BOTÃO ---
+    corpo_html += """
+            </div> <!-- Fim do padding interno -->
+            
+            <div style="background-color: #f1f5f9; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+                <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Este relatório foi gerado e enviado automaticamente pelo sistema.</p>
+                <a href="https://ti-regispel.streamlit.app" style="display: inline-block; padding: 14px 28px;
 def show_estoque_de_suprimentos():
     import pandas as pd
     import streamlit as st
