@@ -18,12 +18,14 @@ def rodar_robo():
     user = os.getenv("EMAIL_USER")
     senha = os.getenv("EMAIL_PASS")
     destino_raw = os.getenv("EMAIL_DESTINATARIO")
+    gestor_raw = os.getenv("EMAIL_GESTOR")  # <-- Busca o e-mail do gestor
     
     if not all([server, porta, user, senha, destino_raw]):
         print("Erro: .env incompleto.")
         return
 
     destinos = [e.strip() for e in destino_raw.replace(";", ",").split(",") if e.strip()]
+    destinos_cc = [e.strip() for e in gestor_raw.replace(";", ",").split(",") if e.strip()] if gestor_raw else []  # <-- Prepara a lista de CC
     
     # Conecta no banco de dados local
     db.init_db() 
@@ -50,6 +52,11 @@ def rodar_robo():
     msg = MIMEMultipart()
     msg['From'] = user
     msg['To'] = ", ".join(destinos)
+    
+    # <-- Adiciona o gestor em Cópia no visual do e-mail
+    if destinos_cc:
+        msg['Cc'] = ", ".join(destinos_cc)
+        
     msg['Subject'] = "📊 [REPORT AUTOMÁTICO] Posição de Estoque de Suprimentos"
     
     # --- HTML COM CABEÇALHO CORPORATIVO ---
@@ -226,7 +233,11 @@ def rodar_robo():
         smtp = smtplib.SMTP(server, int(porta))
         smtp.starttls()
         smtp.login(user, senha)
-        smtp.sendmail(user, destinos, msg.as_string())
+        
+        # <-- Combina as duas listas para o disparo efetivo pelo servidor
+        todos_destinatarios = destinos + destinos_cc
+        smtp.sendmail(user, todos_destinatarios, msg.as_string())
+        
         smtp.quit()
         print("✅ Report de estoque automático enviado com sucesso!")
     except Exception as e:
