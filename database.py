@@ -3,6 +3,7 @@ import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+import streamlit as st  # <-- 1. IMPORTAÇÃO DO STREAMLIT PARA USAR O CACHE
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -81,10 +82,17 @@ def execute_query(query, params=()):
     try:
         cursor.execute(query, params)
         conn.commit()
+        # 2. LIMPEZA AUTOMÁTICA DA MEMÓRIA
+        # Sempre que houver um INSERT, UPDATE ou DELETE, limpamos o cache 
+        # para obrigar o sistema a buscar os dados novos na próxima vez.
+        st.cache_data.clear() 
     finally:
         cursor.close()
         conn.close()
 
+# 3. O TURBO: GUARDA AS PESQUISAS NA MEMÓRIA DURANTE 5 MINUTOS (300 segundos)
+# O parâmetro show_spinner=False evita que aquele círculo de carregamento fique a piscar
+@st.cache_data(ttl=300, show_spinner=False) 
 def fetch_data(query, params=()):
     query = _clean_query(query)
     conn = get_connection()
@@ -98,4 +106,5 @@ def fetch_data(query, params=()):
         conn.close()
 
 def delete_data(query, params=()):
+    # Como o delete_data usa o execute_query, o cache já será limpo automaticamente aqui!
     execute_query(query, params)
