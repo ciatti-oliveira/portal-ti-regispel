@@ -751,6 +751,7 @@ def enviar_alerta_suprimentos_novo():
         
     except Exception as e:
         st.error(f"❌ Falha ao conectar no provedor de E-mail: {str(e)}")
+        
 def show_estoque_de_suprimentos():
     import pandas as pd
     import streamlit as st
@@ -814,7 +815,7 @@ def show_estoque_de_suprimentos():
                     with col_f3:
                         departamento = st.selectbox("Departamento Destino", ["Qualidade", "Almoxarifado", "Expedição", "Produção", "RH/DP", "PCP", "Comercial", "Diretoria", "Líderes de Produção", "Compras", "Marketing"])
                         
-                    obs_pedido = st.text_input("Anotação (Ex: Entregue para o João) - Vai apenas para o histórico")
+                    obs_pedido = st.text_input("Nº do Chamado TomTicket")
                     
                 # --- TELA 2: AJUSTE DE ESTOQUE ---
                 elif acao == "✏️ Ajustar Contagem (Estoque)":
@@ -1203,8 +1204,8 @@ def show_estoque_de_suprimentos():
                 qtd = int(row['quantidade'])
                 texto_unidade = "unidade" if qtd == 1 else "unidades"
                 
-                # Se tiver anotação de quem retirou, exibe do lado do setor
-                nota_html = f"<span class='hist-nota'>📝 {row['observacao']}</span>" if pd.notna(row.get('observacao')) and str(row.get('observacao')).strip() != "" else ""
+                # Número do Chamado no Tomticket
+                nota_html = f"<span class='hist-nota' style='background: #fff7ed; color: #ea580c; border: 1px solid #fdba74;'>🎫 Chamado: {row['observacao']}</span>" if pd.notna(row.get('observacao')) and str(row.get('observacao')).strip() != "" else ""
                 
                 html_lista += f"""
                 <div class="hist-card">
