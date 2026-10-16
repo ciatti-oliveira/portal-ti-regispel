@@ -3,7 +3,6 @@ import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
-import streamlit as st  # <-- 1. IMPORTAÇÃO DO STREAMLIT PARA USAR O CACHE
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -69,6 +68,32 @@ def init_db():
         cursor.execute("ALTER TABLE suprimentos ADD COLUMN IF NOT EXISTS departamentos_uso TEXT")
         cursor.execute("ALTER TABLE estoque_suprimentos ADD COLUMN IF NOT EXISTS obs_solicitacao TEXT")
         cursor.execute("ALTER TABLE tecnicos ADD COLUMN IF NOT EXISTS perfil TEXT")
+
+        # --- Tabelas que antes eram criadas dentro das telas do app.py ---
+        cursor.execute('''CREATE TABLE IF NOT EXISTS historico_saidas (id SERIAL PRIMARY KEY, item TEXT, quantidade INTEGER, departamento TEXT, data_saida TIMESTAMP DEFAULT CURRENT_TIMESTAMP, observacao TEXT DEFAULT '')''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS estoque_perifericos (id SERIAL PRIMARY KEY, item TEXT NOT NULL UNIQUE, qtd_atual INTEGER DEFAULT 0, qtd_minima INTEGER DEFAULT 0)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS laptops (id SERIAL PRIMARY KEY, nome_pc TEXT, modelo TEXT NOT NULL, service_tag TEXT, patrimonio TEXT, responsavel TEXT NOT NULL, localizacao TEXT, data_entrega TEXT, senha_sistema TEXT, senha_bios TEXT, usuario_ksc TEXT, senha_kaspersky TEXT, senha_adm TEXT, observacoes TEXT, status TEXT DEFAULT '🟢 EM USO')''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS fluxo_rh (id SERIAL PRIMARY KEY, colaborador TEXT NOT NULL, tipo TEXT NOT NULL, setor TEXT NOT NULL, data_evento TEXT, t1_ok INTEGER DEFAULT 0, t2_ok INTEGER DEFAULT 0, t3_ok INTEGER DEFAULT 0, t4_ok INTEGER DEFAULT 0)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS emprestimos (id SERIAL PRIMARY KEY, usuario TEXT NOT NULL, email TEXT, item TEXT NOT NULL, modelo TEXT, service_tag TEXT, lacre TEXT, patrimonio TEXT, acessorios TEXT, data_retirada TEXT NOT NULL, data_prevista TEXT, data_devolucao TEXT, status TEXT DEFAULT 'PENDENTE')''')
+
+        # Colunas adicionadas ao longo do tempo (idempotente em bancos antigos)
+        colunas_extras = {
+            "historico_saidas": ["data_saida TIMESTAMP DEFAULT CURRENT_TIMESTAMP", "observacao TEXT DEFAULT ''"],
+            "computadores": ["sistema_operacional TEXT", "nome_equipamento TEXT"],
+            "laptops": ["nome_pc TEXT", "data_entrega TEXT", "senha_sistema TEXT", "senha_bios TEXT", "usuario_ksc TEXT", "senha_kaspersky TEXT", "senha_adm TEXT", "observacoes TEXT"],
+            "fluxo_rh": ["matricula TEXT", "ramal TEXT", "usuario_totvs TEXT", "senha_totvs TEXT", "user_ad TEXT", "senha_ad TEXT", "user_email TEXT", "senha_email TEXT", "user_office TEXT", "senha_office TEXT", "observacoes TEXT", "data_conclusao TEXT"],
+            "emprestimos": ["modelo TEXT", "service_tag TEXT", "lacre TEXT", "patrimonio TEXT", "email TEXT", "acessorios TEXT"],
+        }
+        for tabela, colunas in colunas_extras.items():
+            for coluna in colunas:
+                cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS {coluna}")
+
+        # Itens básicos de periféricos (somente se a tabela estiver vazia)
+        cursor.execute("SELECT COUNT(*) FROM estoque_perifericos")
+        if cursor.fetchone()[0] == 0:
+            itens_iniciais = [("Monitor", 0, 2), ("Teclado", 0, 5), ("Mouse", 0, 5), ("Telefone Fixo", 0, 2), ("Telefone Sem Fio", 0, 2), ("Headset", 0, 3)]
+            for item, qtd, minimo in itens_iniciais:
+                cursor.execute("INSERT INTO estoque_perifericos (item, qtd_atual, qtd_minima) VALUES (%s, %s, %s) ON CONFLICT (item) DO NOTHING", (item, qtd, minimo))
         
         conn.commit()
     finally:
@@ -82,17 +107,10 @@ def execute_query(query, params=()):
     try:
         cursor.execute(query, params)
         conn.commit()
-        # 2. LIMPEZA AUTOMÁTICA DA MEMÓRIA
-        # Sempre que houver um INSERT, UPDATE ou DELETE, limpamos o cache 
-        # para obrigar o sistema a buscar os dados novos na próxima vez.
-        st.cache_data.clear() 
     finally:
         cursor.close()
         conn.close()
 
-# 3. O TURBO: GUARDA AS PESQUISAS NA MEMÓRIA DURANTE 5 MINUTOS (300 segundos)
-# O parâmetro show_spinner=False evita que aquele círculo de carregamento fique a piscar
-@st.cache_data(ttl=300, show_spinner=False) 
 def fetch_data(query, params=()):
     query = _clean_query(query)
     conn = get_connection()
@@ -106,5 +124,4 @@ def fetch_data(query, params=()):
         conn.close()
 
 def delete_data(query, params=()):
-    # Como o delete_data usa o execute_query, o cache já será limpo automaticamente aqui!
     execute_query(query, params)

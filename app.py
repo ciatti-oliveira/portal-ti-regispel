@@ -1,12 +1,10 @@
-import platform
-import subprocess
 import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import database as db
+import psycopg2.errors
 import smtplib
-import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
@@ -90,10 +88,6 @@ def render_sidebar():
 # ==========================================
 # MÓDULO 1: GESTÃO DE IMPRESSORAS
 # ==========================================
-
-import pandas as pd
-import plotly.express as px
-import streamlit as st
 
 def show_dashboard():
     st.title("📊 Dashboard de Impressoras")
@@ -763,18 +757,6 @@ def show_estoque_de_suprimentos():
     
     somente_leitura = "Visitante" in st.session_state.get('perfil_acesso', '')
 
-    # Cria as colunas novas no banco de dados para evitar erros
-    try:
-        db.execute_query("ALTER TABLE estoque_suprimentos ADD COLUMN obs_solicitacao TEXT DEFAULT ''")
-    except: pass
-    
-    try:
-        db.execute_query("ALTER TABLE historico_saidas ADD COLUMN data_saida TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-    except: pass
-    
-    try:
-        db.execute_query("ALTER TABLE historico_saidas ADD COLUMN observacao TEXT DEFAULT ''")
-    except: pass
 
     if not somente_leitura:
         if st.button("📧 Enviar Relatório de Alertas por E-mail", width="stretch"):
@@ -1245,7 +1227,7 @@ def show_cadastros():
                     db.execute_query("INSERT INTO setores (nome) VALUES (?)", (nome_setor.upper(),))
                     st.success("Setor cadastrado!")
                     st.rerun()
-                except: st.error("Esse setor já existe.")
+                except psycopg2.errors.UniqueViolation: st.error("Esse setor já existe.")
         st.markdown("---")
         
         # --- TABELA DE SETORES BLINDADA ---
@@ -1274,7 +1256,7 @@ def show_cadastros():
                         db.execute_query("INSERT INTO suprimentos (categoria, cor_tipo, departamentos_uso) VALUES (?, ?, ?)", (categoria.upper(), cor_tipo.upper(), deps_str))
                         st.success("Suprimento cadastrado!")
                         st.rerun()
-                    except: st.error("Este item já existe.")
+                    except psycopg2.errors.UniqueViolation: st.error("Este item já existe.")
         
         st.markdown("---")
         
@@ -1327,10 +1309,6 @@ def show_cadastros():
     with tab3:
         st.markdown("### Registrar Integrante do T.I")
         
-        try:
-            db.execute_query("ALTER TABLE tecnicos ADD COLUMN perfil TEXT DEFAULT 'Técnico'")
-        except:
-            pass 
 
         with st.form("form_novo_tec", clear_on_submit=True):
             col_t1, col_t2, col_t3, col_t4 = st.columns(4)
@@ -1382,199 +1360,6 @@ def show_cadastros():
 
 # ==========================================
 # MÓDULO 2: CONTROLE DE ATIVOS (PCs)
-# ==========================================
-
-def show_dashboard_ativos():
-    import plotly.express as px
-    import pandas as pd
-    
-    st.title("📊 Dashboard de Ativos")
-    st.markdown("---")
-
-    query = "SELECT * FROM computadores"
-    dados = db.fetch_data(query)
-
-    if not dados:
-        st.info("Nenhuma máquina cadastrada ainda. Vá em 'Inventário de Máquinas' para começar.")
-        return
-
-    df = pd.DataFrame(dados)
-
-    col_nome = 'usuario' if 'usuario' in df.columns else ('Funcionário' if 'Funcionário' in df.columns else df.columns[1])
-    col_setor = 'setor_id' if 'setor_id' in df.columns else ('Setor' if 'Setor' in df.columns else df.columns[4])
-    col_cpu = 'processador' if 'processador' in df.columns else ('Processador' if 'Processador' in df.columns else df.columns[5])
-    col_ram = 'memoria_ram' if 'memoria_ram' in df.columns else ('↑ RAM' if '↑ RAM' in df.columns else df.columns[6])
-
-    df[col_setor] = df[col_setor].fillna("NÃO DEFINIDO").replace(["None", "", "none"], "NÃO DEFINIDO").astype(str).str.strip().str.upper()
-    df[col_ram] = df[col_ram].fillna("").astype(str).str.upper()
-
-    total_pcs = len(df)
-    setores_unicos = df[col_setor].nunique()
-    pcs_4gb = len(df[df[col_ram].str.contains('4', na=False)]) 
-
-    # Cards Superiores
-    kpi_html = f"""
-    <div style="display: flex; gap: 20px; margin-bottom: 35px; flex-wrap: wrap;">
-        <div style="flex: 1; background-color: #ffffff; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
-            <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Total de Computadores</div>
-            <div style="font-size: 36px; font-weight: 900; color: #1e293b; margin-top: 5px; line-height: 1;">💻 {total_pcs}</div>
-        </div>
-        <div style="flex: 1; background-color: #ffffff; border-left: 5px solid #10b981; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
-            <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Setores Atendidos</div>
-            <div style="font-size: 36px; font-weight: 900; color: #1e293b; margin-top: 5px; line-height: 1;">🏢 {setores_unicos}</div>
-        </div>
-        <div style="flex: 1; background-color: #fffbeb; border-left: 5px solid #f59e0b; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); min-width: 200px;">
-            <div style="font-size: 12px; color: #b45309; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Máquinas com 4GB RAM</div>
-            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 5px;">
-                <span style="font-size: 36px; font-weight: 900; color: #92400e; line-height: 1;">⚠️ {pcs_4gb}</span>
-                <span style="font-size: 10px; background: #fde68a; color: #92400e; padding: 4px 8px; border-radius: 12px; font-weight: bold;">Upgrade Recomendado</span>
-            </div>
-        </div>
-    </div>
-    """
-    st.markdown(kpi_html.replace("\n", ""), unsafe_allow_html=True)
-    col1, col2 = st.columns([1.3, 1.2])
-
-    with col1:
-        st.markdown("##### 🏢 Máquinas por Setor")
-        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
-        
-        df_setores = df[col_setor].value_counts().reset_index()
-        df_setores.columns = ['Setor', 'Quantidade']
-        df_setores = df_setores.sort_values(by='Quantidade', ascending=True)
-        
-        fig = px.bar(
-            df_setores,
-            x='Quantidade',
-            y='Setor',
-            orientation='h',
-            text='Quantidade',
-            color_discrete_sequence=["#005ea2"] 
-        )
-        
-        fig.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            xaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="", showticklabels=False),
-            yaxis=dict(showgrid=False, title=""),
-            margin=dict(l=0, r=20, t=10, b=0),
-            height=400,
-            showlegend=False
-        )
-        fig.update_traces(textposition='outside', textfont_size=13, textfont_color="#334155")
-        st.plotly_chart(fig, width="stretch")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("##### 🔍 Detalhes das Máquinas")
-        
-        lista_setores = df_setores.sort_values(by='Setor')['Setor'].tolist()
-        setor_selecionado = st.selectbox("Selecione o setor para visualizar quem são os usuários:", lista_setores)
-        
-        if setor_selecionado:
-            df_detalhe = df[df[col_setor] == setor_selecionado].copy()
-            df_detalhe = df_detalhe[[col_nome, col_cpu, col_ram]]
-            df_detalhe.columns = ['Usuário/Máquina', 'Processador', 'Memória RAM']
-            
-            html_detalhes = f"""
-            <div style="overflow-x: auto; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px;">
-                    <thead>
-                        <tr style="background-color: #005ea2; color: white; text-align: left;">
-                            <th style="padding: 12px 15px; font-weight: 600;">Usuário/Máquina</th>
-                            <th style="padding: 12px 15px; font-weight: 600;">Processador</th>
-                            <th style="padding: 12px 15px; font-weight: 600;">Memória RAM</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            """
-            
-            for i, (index, row) in enumerate(df_detalhe.iterrows()):
-                bg_color = "#ffffff" if i % 2 == 0 else "#f8fafc"
-                html_detalhes += f"""
-                        <tr style="background-color: {bg_color}; border-bottom: 1px solid #e2e8f0; color: #334155;">
-                            <td style="padding: 12px 15px;">{row['Usuário/Máquina']}</td>
-                            <td style="padding: 12px 15px;">{row['Processador']}</td>
-                            <td style="padding: 12px 15px;">{row['Memória RAM']}</td>
-                        </tr>
-                """
-                
-            html_detalhes += """
-                    </tbody>
-                </table>
-            </div>
-            """
-            st.markdown(html_detalhes.replace("\n", ""), unsafe_allow_html=True)
-
-    with col2:
-        st.markdown("##### ⏱️ Últimos Cadastros")
-        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True) 
-        
-        ultimos = df.tail(6)[[col_nome, col_setor, col_cpu]].copy()
-        ultimos.columns = ['Usuário', 'Setor', 'Processador']
-        ultimos = ultimos.iloc[::-1]
-        
-        html_tabela = f"""
-        <div style="overflow-x: auto; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-            <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px;">
-                <thead>
-                    <tr style="background-color: #005ea2; color: white; text-align: left;">
-                        <th style="padding: 12px 15px; font-weight: 600;">Usuário</th>
-                        <th style="padding: 12px 15px; font-weight: 600;">Setor</th>
-                        <th style="padding: 12px 15px; font-weight: 600;">Processador</th>
-                    </tr>
-                </thead>
-                <tbody>
-        """
-        
-        for index, row in enumerate(ultimos.itertuples()):
-            bg_color = "#ffffff" if index % 2 == 0 else "#f8fafc"
-            html_tabela += f"""
-                    <tr style="background-color: {bg_color}; border-bottom: 1px solid #e2e8f0; color: #334155;">
-                        <td style="padding: 12px 15px;">{row.Usuário}</td>
-                        <td style="padding: 12px 15px; font-weight: 600;">{row.Setor}</td>
-                        <td style="padding: 12px 15px;">{row.Processador}</td>
-                    </tr>
-            """
-            
-        html_tabela += """
-                </tbody>
-            </table>
-        </div>
-        """
-        st.markdown(html_tabela.replace("\n", ""), unsafe_allow_html=True)
-
-    # ==========================================
-    # NOVO BLOCO: VISÃO DE SISTEMAS OPERATIVOS (Donut + Cards)
-    # ==========================================
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("---")
-    st.markdown("##### 🪟 Distribuição de Sistemas Operativos")
-    
-    # 1. Tentativa de encontrar automaticamente a coluna do SO no banco de dados
-    col_os = None
-    for col in df.columns:
-        if any(nome in col.lower() for nome in ['sistema', 'os', 'so', 'windows']):
-            col_os = col
-            break
-            
-    # Caso não ache uma coluna, criamos uma temporária para não quebrar a tela (você pode ajustar depois)
-    if col_os is None:
-        col_os = 'Sistema Operacional'
-        df[col_os] = 'Não Informado' 
-
-    # 2. Função inteligente para agrupar e padronizar os nomes do SO
-    def padroniza_os(val):
-        v = str(val).upper()
-        if '11' in v: return 'Windows 11'
-        if '10' in v: return 'Windows 10'
-        if 'MAC' in v or 'APPLE' in v or 'OSX' in v: return 'MAC'
-        if v == 'NAN' or v == '' or v == 'NONE': return 'Não Informado'
-        return 'Outros'
-
-    df['OS_Formatado'] = df[col_os].apply(padroniza_os)
-    
-# ==========================================
-# MÓDULO: DASHBOARD DE ATIVOS (PCs)
 # ==========================================
 
 def show_dashboard_ativos():
@@ -1792,34 +1577,6 @@ def show_estoque_perifericos():
     
     somente_leitura = "Visitante" in st.session_state.get('perfil_acesso', '')
 
-    # 1. CRIAÇÃO DO BANCO DE DADOS
-    db.execute_query("""
-    CREATE TABLE IF NOT EXISTS estoque_perifericos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        item TEXT NOT NULL UNIQUE,
-        qtd_atual INTEGER DEFAULT 0,
-        qtd_minima INTEGER DEFAULT 0
-    )
-    """)
-
-    # 2. POPULANDO ITENS BÁSICOS (Roda apenas se o banco estiver vazio)
-    itens_iniciais = [
-        ("Monitor", 0, 2), ("Teclado", 0, 5), ("Mouse", 0, 5), 
-        ("Telefone Fixo", 0, 2), ("Telefone Sem Fio", 0, 2), ("Headset", 0, 3)
-    ]
-    
-    dados_banco = db.fetch_data("SELECT * FROM estoque_perifericos")
-    if not dados_banco:
-        for item, qtd, min_qtd in itens_iniciais:
-            try:
-                db.execute_query(
-                    "INSERT INTO estoque_perifericos (item, qtd_atual, qtd_minima) VALUES (?, ?, ?)",
-                    (item, qtd, min_qtd)
-                )
-            except:
-                pass
-        st.rerun()
-
     # ==========================================
     # PAINEL SUPERIOR (Estilo Tela de Suprimentos)
     # ==========================================
@@ -1874,7 +1631,7 @@ def show_estoque_perifericos():
                                 )
                                 st.success(f"✅ Item '{novo_item}' adicionado ao controle!")
                                 st.rerun()
-                            except:
+                            except psycopg2.errors.UniqueViolation:
                                 st.error("❌ Esse item já existe no banco de dados.")
                         else:
                             st.error("Digite o nome do item.")
@@ -2004,16 +1761,6 @@ def show_inventario_ativos():
     st.title("🖥️ Inventário de Máquinas")
     
     somente_leitura = "Visitante" in st.session_state.get('perfil_acesso', '')
-
-    try:
-        db.execute_query("ALTER TABLE computadores ADD COLUMN sistema_operacional TEXT DEFAULT 'Não Informado'")
-    except:
-        pass 
-
-    try:
-        db.execute_query("ALTER TABLE computadores ADD COLUMN nome_equipamento TEXT DEFAULT ''")
-    except:
-        pass
 
     query = "SELECT * FROM computadores"
     dados = db.fetch_data(query)
@@ -2268,37 +2015,6 @@ def show_notebook_regispel():
     
     somente_leitura = "Visitante" in st.session_state.get('perfil_acesso', '')
 
-    # 1. CRIAÇÃO DO BANCO DE DADOS
-    db.execute_query("""
-    CREATE TABLE IF NOT EXISTS laptops (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome_pc TEXT,
-        modelo TEXT NOT NULL,
-        service_tag TEXT,
-        patrimonio TEXT,
-        responsavel TEXT NOT NULL,
-        localizacao TEXT,
-        data_entrega TEXT,
-        senha_sistema TEXT,
-        senha_bios TEXT,
-        usuario_ksc TEXT,
-        senha_kaspersky TEXT,
-        senha_adm TEXT,
-        observacoes TEXT,
-        status TEXT DEFAULT '🟢 EM USO'
-    )
-    """)
-
-    novas_colunas = [
-        "nome_pc", "data_entrega", "senha_sistema", "senha_bios", 
-        "usuario_ksc", "senha_kaspersky", "senha_adm", "observacoes"
-    ]
-    for col in novas_colunas:
-        try:
-            db.execute_query(f"ALTER TABLE laptops ADD COLUMN {col} TEXT")
-        except:
-            pass
-
     # ==========================================
     # 2. OPÇÕES DE CADASTRO, IMPORTAÇÃO, EDIÇÃO E EXCLUSÃO
     # ==========================================
@@ -2449,7 +2165,7 @@ def show_notebook_regispel():
                     data_banco = get_val_ed('data_entrega')
                     try:
                         data_obj = datetime.strptime(data_banco, "%d/%m/%Y").date()
-                    except:
+                    except (ValueError, TypeError):
                         data_obj = datetime.today().date()
                         
                     with c7: ed_data = st.date_input("Data de Entrega", value=data_obj)
@@ -2651,33 +2367,6 @@ def show_fluxo_rh():
         "FINANCEIRO", "FISCAL", "IMPRESSORAS", "LOGÍSTICA", "MARKETING", "MECÂNICA", 
         "PCP", "PORTARIA", "PRODUÇÃO", "PRODUTOS ESPECIAIS", "QUALIDADE", "RH", "T.I.", "VENDAS"
     ]
-
-    db.execute_query("""
-    CREATE TABLE IF NOT EXISTS fluxo_rh (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        colaborador TEXT NOT NULL,
-        tipo TEXT NOT NULL, 
-        setor TEXT NOT NULL,
-        data_evento TEXT,
-        t1_ok INTEGER DEFAULT 0, 
-        t2_ok INTEGER DEFAULT 0, 
-        t3_ok INTEGER DEFAULT 0, 
-        t4_ok INTEGER DEFAULT 0  
-    )
-    """)
-
-    # 🔹 CORRIGIDO: Adicionada a vírgula após "observacoes"
-    novas_colunas = [
-        "matricula", "ramal", "usuario_totvs", "senha_totvs",
-        "user_ad", "senha_ad", "user_email", "senha_email",
-        "user_office", "senha_office", "observacoes",
-        "data_conclusao"
-    ]
-    for col_name in novas_colunas:
-        try:
-            db.execute_query(f"ALTER TABLE fluxo_rh ADD COLUMN {col_name} TEXT")
-        except Exception:
-            pass 
 
     def get_safe_val(row_data, field_key):
         val = row_data.get(field_key, '')
@@ -2940,7 +2629,7 @@ def show_fluxo_rh():
                     # x=85 centraliza uma imagem de largura 40 numa página A4
                     pdf.image("logo.png", x=85, y=10, w=40)
                     pdf.ln(25) # Pula um espaço para o texto não sobrepor a imagem
-                except:
+                except (OSError, RuntimeError):
                     pass # Se o arquivo logo.png não for encontrado, segue sem quebrar o sistema
                 
                 pdf.set_font("Arial", 'B', 16)
@@ -3075,11 +2764,6 @@ def show_login():
         [data-testid="stFormSubmitButton"] button { background-color: #007BFF !important; color: white !important; border-radius: 6px !important; font-weight: bold !important;}
     </style>""", unsafe_allow_html=True)
 
-    # Verifica se a coluna perfil existe. Se não existir, tenta criar e definir o padrão.
-    try:
-        db.execute_query("ALTER TABLE tecnicos ADD COLUMN perfil TEXT DEFAULT 'Administrador'")
-    except:
-        pass 
 
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.1, 1])
@@ -3312,30 +2996,6 @@ def show_emprestimos():
             return str(e)
 
 
-    # ATUALIZAÇÃO DO BANCO DE DADOS
-    db.execute_query("""
-    CREATE TABLE IF NOT EXISTS emprestimos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario TEXT NOT NULL,
-        email TEXT, 
-        item TEXT NOT NULL,
-        modelo TEXT,
-        service_tag TEXT,
-        lacre TEXT,
-        patrimonio TEXT,
-        acessorios TEXT,
-        data_retirada TEXT NOT NULL,
-        data_prevista TEXT,
-        data_devolucao TEXT,
-        status TEXT DEFAULT 'PENDENTE'
-    )
-    """)
-
-    for col in ["modelo", "service_tag", "lacre", "patrimonio", "email", "acessorios"]:
-        try:
-            db.execute_query(f"ALTER TABLE emprestimos ADD COLUMN {col} TEXT")
-        except: pass
-
 
     if not somente_leitura:
         with st.expander("➕ Registrar Novo Empréstimo"):
@@ -3406,7 +3066,7 @@ def show_emprestimos():
                 prev = datetime.strptime(row['data_prevista'], "%d/%m/%Y").date()
                 if prev < hoje:
                     atrasados += 1
-            except:
+            except (ValueError, TypeError):
                 pass
 
     qtd_ativos = len(df_pendentes)
@@ -3463,7 +3123,7 @@ def show_emprestimos():
                             st.error(f"Data de Entrega: {row['data_prevista']} (ATRASADO)")
                         else:
                             st.info(f"Data de Entrega: {row['data_prevista']}")
-                    except:
+                    except (ValueError, TypeError):
                         st.write(f"Prev: {row['data_prevista']}")
                 
                 with col_i3:
